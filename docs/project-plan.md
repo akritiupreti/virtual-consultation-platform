@@ -170,11 +170,11 @@ clean and green.
 | 2 | `CONTRIBUTING.md` | 0 ✅ |
 | 3 | `docs/README.md` (index) | 0 ✅ |
 | 4 | `docs/project-plan.md` | 0 ✅ |
-| 5 | `docs/requirements.md` | 0/1 |
-| 6 | `docs/state-machine.md` | 0/1 |
-| 7 | `docs/authorization-matrix.md` | 0/1 |
-| 8 | `docs/data-model.md` (ER) | 0/1 |
-| 9 | `docs/success-criteria.md` | 0/1 |
+| 5 | `docs/requirements.md` | 0 ✅ |
+| 6 | `docs/state-machine.md` | 0 ✅ |
+| 7 | `docs/authorization-matrix.md` | 0 ✅ |
+| 8 | `docs/data-model.md` (ER) | 0 ✅ |
+| 9 | `docs/success-criteria.md` | 0 ✅ |
 | 10 | `docs/architecture.md` | 1 |
 | 11 | `docs/api-spec.md` | 1/2 |
 | 12 | `docs/security-privacy.md` (threat model) | 1/4 |
@@ -182,7 +182,7 @@ clean and green.
 | 14 | `docs/observability.md` | 5 |
 | 15 | `docs/deployment.md` | 5 |
 | 16 | `docs/testing-strategy.md` | 2/6 |
-| 17 | `docs/adr/0000-template.md` + per-decision ADRs | ongoing |
+| 17 | `docs/adr/` — template + 0001–0006 (more as decisions arise) | 🟡 ongoing |
 | 18 | `docs/retrospective.md` | 7 |
 
 ### Planned ADRs (initial set)

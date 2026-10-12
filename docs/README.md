@@ -13,10 +13,10 @@ All design documentation for the Virtual Consultation Platform. Status legend:
 
 | Doc | Purpose | Status |
 |-----|---------|--------|
-| requirements.md | Functional + non-functional requirements; required vs optional fields | ⬜ Phase 0/1 |
-| state-machine.md | Consultation state machine: valid/invalid transitions, guards, exceptions (+ Mermaid) | ⬜ Phase 0/1 |
-| authorization-matrix.md | Resource × action × role × state permission matrix | ⬜ Phase 0/1 |
-| data-model.md | Entities & relationships, ER diagram (+ Mermaid) | ⬜ Phase 0/1 |
+| [requirements.md](requirements.md) | Functional + non-functional requirements; required vs optional fields | ✅ |
+| [state-machine.md](state-machine.md) | Consultation state machine: valid/invalid transitions, guards, exceptions (+ Mermaid) | ✅ |
+| [authorization-matrix.md](authorization-matrix.md) | Resource × action × role × state permission matrix | ✅ |
+| [data-model.md](data-model.md) | Entities & relationships, ER diagram (+ Mermaid) | ✅ |
 | architecture.md | System architecture, component responsibilities, trade-offs (+ diagrams) | ⬜ Phase 1 |
 | api-spec.md | REST endpoints + WebSocket event contracts (OpenAPI where possible) | ⬜ Phase 1/2 |
 
@@ -29,11 +29,11 @@ All design documentation for the Virtual Consultation Platform. Status legend:
 | observability.md | Structured logging, correlation IDs, health checks, metrics | ⬜ Phase 5 |
 | testing-strategy.md | Critical scenarios, test pyramid, coverage gates, accessibility, visual regression | ⬜ Phase 2/6 |
 | deployment.md | Docker Compose topology, environments, CI/CD pipeline stages | ⬜ Phase 5 |
-| success-criteria.md | Measurable outcomes the system is evaluated against | ⬜ Phase 0/1 |
+| [success-criteria.md](success-criteria.md) | Measurable outcomes the system is evaluated against | ✅ |
 
 ## Decisions & reflection
 
 | Doc | Purpose | Status |
 |-----|---------|--------|
-| adr/ | Architecture Decision Records (one file per decision; see template) | ⬜ ongoing |
+| [adr/](adr/) | Architecture Decision Records (template + 0001–0006; more added as decisions are made) | 🟡 ongoing |
 | retrospective.md | End-of-project reflection: wrong assumptions, risks, lessons, redesigns | ⬜ Phase 7 |

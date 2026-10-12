@@ -95,7 +95,7 @@ All design docs live in [`docs/`](docs/). Start with:
 
 | Phase | Name | Status |
 |-------|------|--------|
-| 0 | Planning & Design | 🟡 In progress |
+| 0 | Planning & Design | ✅ Complete |
 | 1 | Scaffolding & Foundation | ⬜ Not started |
 | 2 | MVP Vertical Slice | ⬜ Not started |
 | 3 | Real-time & Concurrency | ⬜ Not started |

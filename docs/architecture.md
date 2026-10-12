@@ -2,8 +2,9 @@
 
 How the Virtual Consultation Platform is structured, why, and where each
 responsibility lives. This document is **diagram-first**: each section opens with
-the picture, then explains it. It is updated as capabilities land (sequence
-diagrams for the claim race and real-time fan-out arrive with Phases 2–3).
+the picture, then explains it. It is updated as capabilities land — the claim-race
+and lifecycle sequence diagrams land here in Phase 2 (§4); the real-time fan-out
+sequence arrives in Phase 3.
 
 Related: [data model](data-model.md) · [state machine](state-machine.md) ·
 [authorization matrix](authorization-matrix.md) · [ADRs](adr/).
@@ -67,54 +68,79 @@ flowchart TB
         health[AppController<br/>/health]
     end
 
-    subgraph phase2 [Phase 2+]
-        consult[ConsultationsModule<br/>state machine · claim · lifecycle]
-        queue[QueueModule<br/>priority · positions]
+    subgraph phase2 [Phase 2 — MVP slice ✅]
+        consult[ConsultationsModule<br/>state machine · DB-atomic claim<br/>lifecycle · derived queue]
         messaging[MessagingModule<br/>persisted messages]
-        audit[AuditModule<br/>audit log]
-        common[CommonModule<br/>validation · errors · correlation IDs]
+        summaries[SummariesModule<br/>draft · doctor finalize]
+        audit[AuditModule<br/>append-only audit log]
+        authz[common/authz<br/>matrix · policy · RolesGuard]
+        sm[common/state-machine<br/>transition registry]
+    end
+
+    subgraph phase5 [Phase 5]
+        common[CommonModule<br/>correlation IDs · metrics]
     end
 
     auth --> prisma
     consult --> prisma
-    queue --> prisma
     messaging --> prisma
+    summaries --> prisma
     audit --> prisma
-    consult -.reads.-> audit
+    consult --> audit
+    messaging --> audit
+    summaries --> audit
+    consult --> authz
+    consult --> sm
+    authz --> sm
 
     classDef later stroke-dasharray: 4 3;
-    class consult,queue,messaging,audit,common later
+    class common later
 ```
 
-| Module                | Responsibility                                              | Phase              |
-| --------------------- | ----------------------------------------------------------- | ------------------ |
-| `ConfigModule`        | Load env (`../.env`), expose typed config                   | 1                  |
-| `PrismaModule`        | Single global Prisma client; connection lifecycle           | 1                  |
-| `AuthModule`          | Register (patient), login, JWT issue/verify, `GET /auth/me` | 1                  |
-| `AppController`       | Unauthenticated `GET /health` liveness                      | 1                  |
-| `ConsultationsModule` | State-machine enforcement, DB-atomic claim, lifecycle       | 2                  |
-| `QueueModule`         | Priority + FIFO ordering, "N ahead" positions               | 2 (real-time in 3) |
-| `MessagingModule`     | Persisted messages (REST); WebSocket room in Phase 3        | 2 / 3              |
-| `AuditModule`         | Append-only audit events (no clinical content)              | 2 / 4              |
-| `CommonModule`        | Validation, error mapping, correlation-ID middleware        | 2 / 5              |
+The queue is **not** a module or a table — it is the set of `QUEUED` consultations
+read straight from Postgres, ordered by priority tier then FIFO, so there is no
+second source of truth to keep in sync. `common/authz` and `common/state-machine`
+are plain, dependency-free units (a matrix, a policy function, a transition
+registry) that both the controllers and services read — the single definition of
+who-may-do-what-when (invariants 1 & 4).
+
+| Module                 | Responsibility                                                                                          | Phase                 |
+| ---------------------- | ------------------------------------------------------------------------------------------------------- | --------------------- |
+| `ConfigModule`         | Load env (`../.env`), expose typed config                                                               | 1                     |
+| `PrismaModule`         | Single global Prisma client; connection lifecycle                                                       | 1                     |
+| `AuthModule`           | Register (patient), login, JWT issue/verify, `GET /auth/me`                                             | 1                     |
+| `AppController`        | Unauthenticated `GET /health` liveness                                                                  | 1                     |
+| `ConsultationsModule`  | State-machine enforcement, DB-atomic claim, lifecycle, derived priority+FIFO queue, "N ahead" positions | 2 ✅ (real-time in 3) |
+| `MessagingModule`      | Persisted messages (REST); WebSocket room in Phase 3                                                    | 2 ✅ / 3              |
+| `SummariesModule`      | Draft (assigned clinician) + doctor-only finalize; immutable                                            | 2 ✅                  |
+| `AuditModule`          | Append-only audit events (no clinical content); admin-only read                                         | 2 ✅ / 4              |
+| `common/authz`         | Authorization matrix, role+state+ownership policy, `RolesGuard`                                         | 2 ✅                  |
+| `common/state-machine` | Transition registry (the central bank of transitions)                                                   | 2 ✅                  |
+| `CommonModule`         | Validation helpers, error mapping, correlation-ID middleware, metrics                                   | 5                     |
 
 ### Authorization seams (where the invariants are enforced)
 
 ```mermaid
 flowchart LR
     req[Incoming request] --> jwtg[JwtAuthGuard<br/>authenticated?]
-    jwtg --> roleg["Role + state guard<br/>(Phase 2, reads the<br/>authorization matrix)"]
-    roleg --> reg["Transition registry<br/>(is this action legal<br/>in this state?)"]
-    reg --> handler[Controller / service]
-    handler --> auditi["Audit interceptor<br/>(Phase 2/4)"]
-
-    classDef later stroke-dasharray: 4 3;
-    class roleg,reg,auditi later
+    jwtg --> roleg["RolesGuard<br/>coarse role gate<br/>(@Roles on the route)"]
+    roleg --> svc[Controller → Service]
+    svc --> pol["authorizeConsultationAction()"]
+    subgraph policy [single authorization composition]
+        pol --> r["1 · role<br/>authorization matrix"]
+        r --> st["2 · state<br/>transition registry"]
+        st --> own["3 · ownership<br/>owner / assigned / participant"]
+    end
+    own --> do[Mutate + audit]
 ```
 
-Authentication is in place now (`JwtAuthGuard`). The role+state guard and the
-shared transition registry land in Phase 2 so that _one_ source of truth defines
-who-can-do-what in each state — never ad-hoc checks in handlers (invariants 1 & 4).
+`JwtAuthGuard` authenticates; `RolesGuard` fails fast on the route's allowed
+roles; then the service runs `authorizeConsultationAction` — the **one** place
+that composes **role → state → ownership**, reading the authorization matrix and
+the shared transition registry. Ordering the checks this way makes the HTTP code
+correct: a disallowed role is `403`, an action illegal from the current state is
+`409`, and a wrong owner is `403` (invariants 1, 3 & 4). State-changing actions
+then write an audit record in the same path (invariant 5).
 
 ---
 
@@ -149,14 +175,68 @@ tokens are a Phase 2 addition.
 
 ---
 
-## 4. Data & concurrency (summary)
+## 4. Data & concurrency
 
 PostgreSQL is the durable system of record ([ADR-0002](adr/0002-postgresql-system-of-record.md));
-the full schema and ER diagram live in [data-model.md](data-model.md). The
-**claim race** is resolved by a single atomic conditional `UPDATE`
-([ADR-0003](adr/0003-claim-concurrency.md)); its sequence diagram is added in
-Phase 2 when the claim endpoint is built. Redis is deliberately _not_ a source of
-truth ([ADR-0004](adr/0004-redis-responsibilities.md)).
+the full schema and ER diagram live in [data-model.md](data-model.md). Redis is
+deliberately _not_ a source of truth ([ADR-0004](adr/0004-redis-responsibilities.md)).
+
+### 4.1 The claim race (ADR-0003, invariant 2)
+
+Two clinicians may claim the same queued case at the same instant. The race is
+resolved **in the database** by a single atomic conditional `UPDATE` — never by
+application-level coordination. Whichever transaction's update matches one row
+wins; the other matches zero rows and is told it was already claimed.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant A as Nurse A
+    participant B as Nurse B
+    participant S as ConsultationsService
+    participant DB as PostgreSQL (row lock)
+
+    Note over A,B: Both see the same QUEUED case and claim simultaneously
+    A->>S: POST /consultations/:id/claim
+    B->>S: POST /consultations/:id/claim
+    S->>DB: UPDATE consultations SET state='CLAIMED', claimed_by=A, version=version+1<br/>WHERE id=:id AND state='QUEUED' AND claimed_by IS NULL
+    S->>DB: UPDATE consultations SET state='CLAIMED', claimed_by=B, version=version+1<br/>WHERE id=:id AND state='QUEUED' AND claimed_by IS NULL
+    Note over DB: Row lock serializes the two UPDATEs
+    DB-->>S: A → 1 row affected
+    DB-->>S: B → 0 rows affected (predicate no longer true)
+    S-->>A: 200 OK — CLAIMED by A
+    S-->>B: 409 Conflict — already claimed
+```
+
+Prisma expresses this as `updateMany({ where: { id, state: QUEUED, claimedBy: null }, … })`;
+`result.count === 1` is the winner, `0` ⇒ `409`. The same conditional-update
+pattern guards every other transition (start / complete / cancel), so a state that
+moves under a request is caught as a zero-row result rather than a lost update.
+This is proven by `backend/test/e2e/claim-concurrency.e2e-spec.ts` (SC-2).
+
+### 4.2 Lifecycle request flow
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant P as Patient
+    participant C as Clinician
+    participant D as Doctor
+    participant API as Backend
+    participant DB as PostgreSQL
+
+    P->>API: POST /consultations (intake + consent)
+    API->>DB: create REQUESTED → update QUEUED (one tx, both audited)
+    C->>API: GET /consultations/queue (minimal pre-claim view)
+    C->>API: POST :id/claim  (DB-atomic) → CLAIMED
+    C->>API: POST :id/start  (cap check) → IN_SESSION
+    P->>API: POST :id/messages
+    C->>API: POST :id/messages
+    C->>API: POST :id/complete → ENDED
+    C->>API: POST :id/summary (draft)
+    D->>API: POST :id/summary/finalize → SUMMARIZED (immutable)
+    P->>API: GET :id/summary (finalized only)
+```
 
 ---
 

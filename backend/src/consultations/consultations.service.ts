@@ -1,0 +1,430 @@
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { Consultation, ConsultationState, Prisma, Priority } from '@prisma/client';
+import { AUDIT_EVENTS } from '../audit/audit-events';
+import { AuditService } from '../audit/audit.service';
+import { Action } from '../common/authz/authorization-matrix';
+import { ActingUser, authorizeConsultationAction } from '../common/authz/policy';
+import {
+  AlreadyClaimedException,
+  ClaimCapReachedException,
+  IllegalTransitionException,
+} from '../common/errors/domain-exceptions';
+import { PrismaService } from '../prisma/prisma.service';
+import { SubmitRequestDto } from './dto/submit-request.dto';
+
+/** Serving order within the queue (higher rank is served first). */
+const PRIORITY_RANK: Record<Priority, number> = {
+  [Priority.ROUTINE]: 0,
+  [Priority.URGENT]: 1,
+  [Priority.EMERGENCY]: 2,
+};
+
+const CANCELLABLE_STATES: ConsultationState[] = [
+  ConsultationState.REQUESTED,
+  ConsultationState.QUEUED,
+  ConsultationState.CLAIMED,
+];
+
+/** Minimal pre-claim view — the only case data visible before claiming (FR-7, C7). */
+export interface QueueItem {
+  id: string;
+  priority: Priority;
+  symptomCategory: string;
+  severity: number;
+  complaintSummary: string;
+  enqueuedAt: Date | null;
+  waitingSeconds: number;
+}
+
+/** A patient's view of their own consultation, including live position. */
+export interface MyConsultationView {
+  id: string;
+  state: ConsultationState;
+  priority: Priority;
+  createdAt: Date;
+  /** Count of cases served before this one; null unless QUEUED. */
+  position: number | null;
+  summaryAvailable: boolean;
+}
+
+/** Full participant view (owner or assigned clinician); includes intake. */
+export interface ConsultationView {
+  id: string;
+  state: ConsultationState;
+  priority: Priority;
+  patientId: string;
+  claimedBy: string | null;
+  createdAt: Date;
+  enqueuedAt: Date | null;
+  claimedAt: Date | null;
+  startedAt: Date | null;
+  endedAt: Date | null;
+  intake: {
+    chiefComplaint: string;
+    symptomCategory: string;
+    onsetDuration: string;
+    severity: number;
+    history: string | null;
+    medications: string | null;
+    consentAt: Date;
+  } | null;
+  summaryAvailable: boolean;
+  summaryFinalized: boolean;
+}
+
+@Injectable()
+export class ConsultationsService {
+  private readonly maxActive: number;
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditService,
+    config: ConfigService,
+  ) {
+    const configured = Number(config.get<string>('MAX_ACTIVE_CONSULTATIONS_PER_CLINICIAN'));
+    this.maxActive = Number.isFinite(configured) && configured > 0 ? configured : 1;
+  }
+
+  /**
+   * Patient submits intake. Creates the consultation (REQUESTED) and immediately
+   * runs the system ENQUEUE transition (REQUESTED → QUEUED) now that intake is
+   * valid, consent is captured, and a priority is set — both steps audited in one
+   * transaction.
+   */
+  async submitRequest(user: ActingUser, dto: SubmitRequestDto): Promise<MyConsultationView> {
+    const now = new Date();
+    const priority = dto.priority ?? Priority.ROUTINE;
+
+    const consultation = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.consultation.create({
+        data: {
+          patientId: user.id,
+          state: ConsultationState.REQUESTED,
+          priority,
+          intake: {
+            create: {
+              chiefComplaint: dto.chiefComplaint,
+              symptomCategory: dto.symptomCategory,
+              onsetDuration: dto.onsetDuration,
+              severity: dto.severity,
+              consentAt: now,
+              history: dto.history ?? null,
+              medications: dto.medications ?? null,
+            },
+          },
+        },
+      });
+      await this.audit.record(
+        {
+          actorId: user.id,
+          eventType: AUDIT_EVENTS.CONSULTATION_REQUESTED,
+          consultationId: created.id,
+          metadata: { priority },
+        },
+        tx,
+      );
+
+      const queued = await tx.consultation.update({
+        where: { id: created.id },
+        data: {
+          state: ConsultationState.QUEUED,
+          enqueuedAt: now,
+          version: { increment: 1 },
+        },
+      });
+      await this.audit.record(
+        {
+          actorId: user.id,
+          eventType: AUDIT_EVENTS.CONSULTATION_ENQUEUED,
+          consultationId: created.id,
+          metadata: { from: ConsultationState.REQUESTED, to: ConsultationState.QUEUED, priority },
+        },
+        tx,
+      );
+      return queued;
+    });
+
+    return {
+      id: consultation.id,
+      state: consultation.state,
+      priority: consultation.priority,
+      createdAt: consultation.createdAt,
+      position: await this.positionOf(consultation),
+      summaryAvailable: false,
+    };
+  }
+
+  /** Triage queue: priority tier first, then FIFO by enqueue time (FR-21). */
+  async getQueue(): Promise<QueueItem[]> {
+    const rows = await this.prisma.consultation.findMany({
+      where: { state: ConsultationState.QUEUED },
+      orderBy: [{ priority: 'desc' }, { enqueuedAt: 'asc' }],
+      include: {
+        intake: {
+          select: { symptomCategory: true, severity: true, chiefComplaint: true },
+        },
+      },
+    });
+
+    const now = Date.now();
+    return rows.map((row) => ({
+      id: row.id,
+      priority: row.priority,
+      symptomCategory: row.intake?.symptomCategory ?? 'UNKNOWN',
+      severity: row.intake?.severity ?? 0,
+      // A short complaint summary only — not the full clinical narrative.
+      complaintSummary: (row.intake?.chiefComplaint ?? '').slice(0, 100),
+      enqueuedAt: row.enqueuedAt,
+      waitingSeconds: row.enqueuedAt
+        ? Math.max(0, Math.round((now - row.enqueuedAt.getTime()) / 1000))
+        : 0,
+    }));
+  }
+
+  /** A patient's own consultations with a live "N ahead" position for queued ones. */
+  async getMine(user: ActingUser): Promise<MyConsultationView[]> {
+    const rows = await this.prisma.consultation.findMany({
+      where: { patientId: user.id },
+      orderBy: { createdAt: 'desc' },
+      include: { summary: { select: { finalizedAt: true } } },
+    });
+
+    const views: MyConsultationView[] = [];
+    for (const row of rows) {
+      views.push({
+        id: row.id,
+        state: row.state,
+        priority: row.priority,
+        createdAt: row.createdAt,
+        position: row.state === ConsultationState.QUEUED ? await this.positionOf(row) : null,
+        summaryAvailable: row.summary?.finalizedAt != null,
+      });
+    }
+    return views;
+  }
+
+  /** Full participant view (patient owner or assigned clinician). */
+  async getOne(user: ActingUser, id: string): Promise<ConsultationView> {
+    const consultation = await this.prisma.consultation.findUnique({
+      where: { id },
+      include: { intake: true, summary: { select: { finalizedAt: true } } },
+    });
+    if (!consultation) {
+      throw new NotFoundException('Consultation not found');
+    }
+    authorizeConsultationAction(user, consultation, Action.VIEW_CONSULTATION);
+
+    return {
+      id: consultation.id,
+      state: consultation.state,
+      priority: consultation.priority,
+      patientId: consultation.patientId,
+      claimedBy: consultation.claimedBy,
+      createdAt: consultation.createdAt,
+      enqueuedAt: consultation.enqueuedAt,
+      claimedAt: consultation.claimedAt,
+      startedAt: consultation.startedAt,
+      endedAt: consultation.endedAt,
+      intake: consultation.intake
+        ? {
+            chiefComplaint: consultation.intake.chiefComplaint,
+            symptomCategory: consultation.intake.symptomCategory,
+            onsetDuration: consultation.intake.onsetDuration,
+            severity: consultation.intake.severity,
+            history: consultation.intake.history,
+            medications: consultation.intake.medications,
+            consentAt: consultation.intake.consentAt,
+          }
+        : null,
+      summaryAvailable: consultation.summary != null,
+      summaryFinalized: consultation.summary?.finalizedAt != null,
+    };
+  }
+
+  /**
+   * DB-atomic claim (ADR-0003, invariant 2). The conditional UPDATE is the race
+   * resolver: exactly the transaction whose update affects one row wins; a zero-row
+   * result means someone else already claimed it → 409.
+   */
+  async claim(user: ActingUser, id: string): Promise<ConsultationView> {
+    const existing = await this.loadOr404(id);
+    authorizeConsultationAction(user, existing, Action.CLAIM_CASE);
+
+    const result = await this.prisma.consultation.updateMany({
+      where: { id, state: ConsultationState.QUEUED, claimedBy: null },
+      data: {
+        state: ConsultationState.CLAIMED,
+        claimedBy: user.id,
+        claimedAt: new Date(),
+        version: { increment: 1 },
+      },
+    });
+    if (result.count === 0) {
+      throw new AlreadyClaimedException();
+    }
+
+    await this.audit.record({
+      actorId: user.id,
+      eventType: AUDIT_EVENTS.CONSULTATION_CLAIMED,
+      consultationId: id,
+    });
+    return this.getOne(user, id);
+  }
+
+  /** Assigned clinician explicitly starts; enforces the active-session cap (FR-10). */
+  async start(user: ActingUser, id: string): Promise<ConsultationView> {
+    const existing = await this.loadOr404(id);
+    authorizeConsultationAction(user, existing, Action.START_CONSULTATION);
+
+    const active = await this.prisma.consultation.count({
+      where: { claimedBy: user.id, state: ConsultationState.IN_SESSION },
+    });
+    if (active >= this.maxActive) {
+      throw new ClaimCapReachedException(this.maxActive);
+    }
+
+    await this.applyTransition(id, {
+      from: [ConsultationState.CLAIMED],
+      to: ConsultationState.IN_SESSION,
+      extraWhere: { claimedBy: user.id },
+      data: { startedAt: new Date() },
+      action: Action.START_CONSULTATION,
+      currentState: existing.state,
+    });
+
+    await this.audit.record({
+      actorId: user.id,
+      eventType: AUDIT_EVENTS.CONSULTATION_STARTED,
+      consultationId: id,
+    });
+    return this.getOne(user, id);
+  }
+
+  /** Assigned clinician completes the active session. */
+  async complete(user: ActingUser, id: string): Promise<ConsultationView> {
+    const existing = await this.loadOr404(id);
+    authorizeConsultationAction(user, existing, Action.END_CONSULTATION);
+
+    await this.applyTransition(id, {
+      from: [ConsultationState.IN_SESSION],
+      to: ConsultationState.ENDED,
+      extraWhere: { claimedBy: user.id },
+      data: { endedAt: new Date() },
+      action: Action.END_CONSULTATION,
+      currentState: existing.state,
+    });
+
+    await this.audit.record({
+      actorId: user.id,
+      eventType: AUDIT_EVENTS.CONSULTATION_COMPLETED,
+      consultationId: id,
+    });
+    return this.getOne(user, id);
+  }
+
+  /** Patient cancels before a session begins (REQUESTED / QUEUED / CLAIMED). */
+  async cancel(user: ActingUser, id: string): Promise<ConsultationView> {
+    const existing = await this.loadOr404(id);
+    authorizeConsultationAction(user, existing, Action.CANCEL_REQUEST);
+
+    await this.applyTransition(id, {
+      from: CANCELLABLE_STATES,
+      to: ConsultationState.CANCELLED,
+      extraWhere: { patientId: user.id },
+      action: Action.CANCEL_REQUEST,
+      currentState: existing.state,
+    });
+
+    await this.audit.record({
+      actorId: user.id,
+      eventType: AUDIT_EVENTS.CONSULTATION_CANCELLED,
+      consultationId: id,
+    });
+    return this.getOne(user, id);
+  }
+
+  /** Clinician re-triages a queued case (FR-20). */
+  async setPriority(
+    user: ActingUser,
+    id: string,
+    priority: Priority,
+  ): Promise<{ id: string; state: ConsultationState; priority: Priority }> {
+    const existing = await this.loadOr404(id);
+    authorizeConsultationAction(user, existing, Action.SET_PRIORITY);
+    if (existing.state !== ConsultationState.QUEUED) {
+      throw new IllegalTransitionException(Action.SET_PRIORITY, existing.state);
+    }
+
+    const updated = await this.prisma.consultation.update({
+      where: { id },
+      data: { priority, version: { increment: 1 } },
+    });
+    await this.audit.record({
+      actorId: user.id,
+      eventType: AUDIT_EVENTS.PRIORITY_CHANGED,
+      consultationId: id,
+      metadata: { from: existing.priority, to: priority },
+    });
+    return { id: updated.id, state: updated.state, priority: updated.priority };
+  }
+
+  // ── internals ──────────────────────────────────────────────────────────────
+
+  private async loadOr404(id: string): Promise<Consultation> {
+    const consultation = await this.prisma.consultation.findUnique({ where: { id } });
+    if (!consultation) {
+      throw new NotFoundException('Consultation not found');
+    }
+    return consultation;
+  }
+
+  /**
+   * Conditional UPDATE guarded by the `from` states (and any ownership filter), so
+   * a state change racing in between is caught: a zero-row result means the state
+   * moved under us → 409 (optimistic concurrency, same mechanism as the claim).
+   */
+  private async applyTransition(
+    id: string,
+    opts: {
+      from: ConsultationState[];
+      to: ConsultationState;
+      extraWhere?: Prisma.ConsultationWhereInput;
+      data?: Prisma.ConsultationUpdateManyMutationInput;
+      action: string;
+      currentState: ConsultationState;
+    },
+  ): Promise<void> {
+    const result = await this.prisma.consultation.updateMany({
+      where: { id, state: { in: opts.from }, ...opts.extraWhere },
+      data: { state: opts.to, version: { increment: 1 }, ...opts.data },
+    });
+    if (result.count === 0) {
+      throw new IllegalTransitionException(opts.action, opts.currentState);
+    }
+  }
+
+  /** "N requests ahead": higher-priority cases, plus same-priority ones enqueued earlier. */
+  private async positionOf(consultation: {
+    id: string;
+    priority: Priority;
+    enqueuedAt: Date | null;
+  }): Promise<number> {
+    const higherTiers = (Object.keys(PRIORITY_RANK) as Priority[]).filter(
+      (p) => PRIORITY_RANK[p] > PRIORITY_RANK[consultation.priority],
+    );
+    return this.prisma.consultation.count({
+      where: {
+        state: ConsultationState.QUEUED,
+        id: { not: consultation.id },
+        OR: [
+          { priority: { in: higherTiers } },
+          {
+            priority: consultation.priority,
+            enqueuedAt: { lt: consultation.enqueuedAt ?? new Date() },
+          },
+        ],
+      },
+    });
+  }
+}

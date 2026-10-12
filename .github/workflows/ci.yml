@@ -41,5 +41,52 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Test
+      - name: Test (unit)
         run: npm test
+
+  integration:
+    name: integration · e2e (real Postgres)
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: vcp
+          POSTGRES_PASSWORD: vcp_dev_password
+          # The database name contains "test" — the e2e safety guard requires it.
+          POSTGRES_DB: vcp_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U vcp -d vcp_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://vcp:vcp_dev_password@localhost:5432/vcp_test?schema=public
+      JWT_SECRET: ci-only-test-secret
+      JWT_EXPIRES_IN: 15m
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npm run prisma:generate --workspace backend
+
+      - name: Apply migrations to the test database
+        run: npx prisma migrate deploy --schema backend/src/prisma/schema.prisma
+
+      - name: Test (e2e)
+        run: npm run test:e2e --workspace backend

@@ -1,0 +1,49 @@
+# Project spec (intentionally not committed)
+IDP Project Idea.docx
+*.docx
+~$*.docx
+
+# Private / local-only files (not shared with supervisors)
+CLAUDE.md
+docs/amrit-feedback-responses.md
+
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build output
+dist/
+build/
+coverage/
+.next/
+out/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Test / tooling artifacts
+.nyc_output/
+playwright-report/
+test-results/
+*.tsbuildinfo
+
+# Docker
+*.pid

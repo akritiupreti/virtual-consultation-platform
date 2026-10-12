@@ -1,6 +1,6 @@
 # ADR-0001: Backend framework
 
-- **Status:** Proposed (awaiting sign-off)
+- **Status:** Accepted
 - **Date:** 2026-10-12
 - **Deciders:** Project owner
 
@@ -12,7 +12,7 @@ engineering process. TypeScript + Node is already chosen.
 
 ## Decision
 
-**Proposed:** use **NestJS** for the backend.
+Use **NestJS** for the backend.
 
 ## Alternatives considered
 
@@ -29,5 +29,4 @@ engineering process. TypeScript + Node is already chosen.
   matrix, transition checks, correlation IDs, and audit logging.
 - More initial ceremony, justified by the project's emphasis on demonstrable
   architecture.
-- **Open:** confirm this choice before Phase 1 scaffolding; if a lighter stack is
-  preferred, this ADR is superseded.
+- Confirmed for Phase 1 scaffolding.

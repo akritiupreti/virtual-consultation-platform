@@ -1,0 +1,187 @@
+// Prisma schema — mirrors docs/data-model.md.
+// PostgreSQL is the durable system of record (ADR-0002); Redis (Phase 3) holds
+// only ephemeral state and never appears here.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  PATIENT
+  NURSE
+  DOCTOR
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  DEACTIVATED
+}
+
+enum ConsultationState {
+  REQUESTED
+  QUEUED
+  CLAIMED
+  IN_SESSION
+  ENDED
+  SUMMARIZED
+  CANCELLED
+}
+
+enum Priority {
+  ROUTINE
+  URGENT
+  EMERGENCY
+}
+
+model User {
+  id           String     @id @default(uuid()) @db.Uuid
+  email        String     @unique
+  passwordHash String     @map("password_hash")
+  role         Role
+  status       UserStatus @default(ACTIVE)
+  createdAt    DateTime   @default(now()) @map("created_at")
+
+  consultationsAsPatient Consultation[] @relation("PatientConsultations")
+  consultationsClaimed   Consultation[] @relation("ClaimedConsultations")
+  messages               Message[]
+  attachments            Attachment[]
+  summariesDrafted       Summary[]      @relation("SummaryDraftedBy")
+  summariesFinalized     Summary[]      @relation("SummaryFinalizedBy")
+  addenda                Addendum[]
+  auditLogs              AuditLog[]
+
+  @@map("users")
+}
+
+model Consultation {
+  id         String            @id @default(uuid()) @db.Uuid
+  patientId  String            @map("patient_id") @db.Uuid
+  claimedBy  String?           @map("claimed_by") @db.Uuid
+  state      ConsultationState @default(REQUESTED)
+  priority   Priority          @default(ROUTINE)
+  // Optimistic-lock column; also underpins DB-atomic claim (ADR-0003).
+  version    Int               @default(0)
+  enqueuedAt DateTime?         @map("enqueued_at")
+  claimedAt  DateTime?         @map("claimed_at")
+  startedAt  DateTime?         @map("started_at")
+  endedAt    DateTime?         @map("ended_at")
+  createdAt  DateTime          @default(now()) @map("created_at")
+
+  patient   User  @relation("PatientConsultations", fields: [patientId], references: [id], onDelete: Restrict)
+  clinician User? @relation("ClaimedConsultations", fields: [claimedBy], references: [id], onDelete: Restrict)
+
+  intake      Intake?
+  messages    Message[]
+  attachments Attachment[]
+  summary     Summary?
+  auditLogs   AuditLog[]
+
+  // Composite index backing the triage queue read (state + priority + FIFO).
+  @@index([state, priority, enqueuedAt])
+  @@index([patientId])
+  @@index([claimedBy])
+  @@map("consultations")
+}
+
+model Intake {
+  id              String   @id @default(uuid()) @db.Uuid
+  consultationId  String   @unique @map("consultation_id") @db.Uuid
+  chiefComplaint  String   @map("chief_complaint")
+  symptomCategory String   @map("symptom_category")
+  onsetDuration   String   @map("onset_duration")
+  severity        Int
+  consentAt       DateTime @map("consent_at")
+  history         String?
+  medications     String?
+
+  consultation Consultation @relation(fields: [consultationId], references: [id], onDelete: Cascade)
+
+  @@map("intakes")
+}
+
+model Message {
+  id             String   @id @default(uuid()) @db.Uuid
+  consultationId String   @map("consultation_id") @db.Uuid
+  senderId       String   @map("sender_id") @db.Uuid
+  body           String
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  consultation Consultation @relation(fields: [consultationId], references: [id], onDelete: Cascade)
+  sender       User         @relation(fields: [senderId], references: [id], onDelete: Restrict)
+
+  @@index([consultationId, createdAt])
+  @@map("messages")
+}
+
+model Attachment {
+  id             String   @id @default(uuid()) @db.Uuid
+  consultationId String   @map("consultation_id") @db.Uuid
+  uploadedBy     String   @map("uploaded_by") @db.Uuid
+  filename       String
+  mimeType       String   @map("mime_type")
+  sizeBytes      Int      @map("size_bytes")
+  storageKey     String   @map("storage_key")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  consultation Consultation @relation(fields: [consultationId], references: [id], onDelete: Cascade)
+  uploader     User         @relation(fields: [uploadedBy], references: [id], onDelete: Restrict)
+
+  @@index([consultationId])
+  @@map("attachments")
+}
+
+model Summary {
+  id             String    @id @default(uuid()) @db.Uuid
+  consultationId String    @unique @map("consultation_id") @db.Uuid
+  draftedBy      String    @map("drafted_by") @db.Uuid
+  finalizedBy    String?   @map("finalized_by") @db.Uuid
+  content        String
+  finalizedAt    DateTime? @map("finalized_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  consultation Consultation @relation(fields: [consultationId], references: [id], onDelete: Cascade)
+  drafter      User         @relation("SummaryDraftedBy", fields: [draftedBy], references: [id], onDelete: Restrict)
+  finalizer    User?        @relation("SummaryFinalizedBy", fields: [finalizedBy], references: [id], onDelete: Restrict)
+
+  addenda Addendum[]
+
+  @@map("summaries")
+}
+
+model Addendum {
+  id        String   @id @default(uuid()) @db.Uuid
+  summaryId String   @map("summary_id") @db.Uuid
+  authorId  String   @map("author_id") @db.Uuid
+  content   String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  summary Summary @relation(fields: [summaryId], references: [id], onDelete: Cascade)
+  author  User    @relation(fields: [authorId], references: [id], onDelete: Restrict)
+
+  @@index([summaryId])
+  @@map("addenda")
+}
+
+model AuditLog {
+  id             String   @id @default(uuid()) @db.Uuid
+  actorId        String?  @map("actor_id") @db.Uuid
+  eventType      String   @map("event_type")
+  consultationId String?  @map("consultation_id") @db.Uuid
+  // Who/what/when only — never message bodies, attachments, or summary text.
+  metadata       Json?
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  actor        User?         @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  consultation Consultation? @relation(fields: [consultationId], references: [id], onDelete: SetNull)
+
+  @@index([consultationId])
+  @@index([actorId])
+  @@index([eventType])
+  @@map("audit_logs")
+}

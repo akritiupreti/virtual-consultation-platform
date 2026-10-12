@@ -93,7 +93,8 @@ gantt
     Performance, ADR finalize, retrospective     :p7, after p6, 7d
 ```
 
-### Phase 0 — Planning & Design *(current)*
+### Phase 0 — Planning & Design _(current)_
+
 **Goal:** decisions made and visible before code.
 **Deliverables:** this plan, `README.md`, `CONTRIBUTING.md`, the documentation
 index, and the first pass of `requirements.md`, `state-machine.md`,
@@ -102,6 +103,7 @@ index, and the first pass of `requirements.md`, `state-machine.md`,
 decisions resolved or explicitly deferred.
 
 ### Phase 1 — Scaffolding & Foundation
+
 **Goal:** an empty but runnable skeleton with the plumbing in place.
 **Deliverables:** repo structure (`backend/`, `frontend/`), TypeScript + lint +
 format config, PostgreSQL + Prisma schema (migrations), Docker Compose for DB,
@@ -111,6 +113,7 @@ test on PR), `architecture.md`.
 authenticated endpoint works; CI runs green on a PR.
 
 ### Phase 2 — MVP Vertical Slice
+
 **Goal:** the demonstrable core workflow end-to-end.
 **Deliverables:** consultation entity + state machine enforcement, request
 submission, queue listing (polled is acceptable here), **DB-atomic claim**, start
@@ -121,6 +124,7 @@ concurrency test proves exactly one claimer wins; RBAC test proves an admin
 cannot read clinical content.
 
 ### Phase 3 — Real-time & Concurrency hardening
+
 **Goal:** make it live.
 **Deliverables:** WebSocket channel for queue + room, Redis presence + pub/sub
 fan-out, real-time position ("N ahead"), claim-start **TTL + auto-requeue**,
@@ -129,6 +133,7 @@ reconnection handling. `architecture.md` updated with sequence diagrams.
 started case requeues automatically and is audited.
 
 ### Phase 4 — Security, Privacy & Audit
+
 **Goal:** defensible handling of sensitive data.
 **Deliverables:** full authorization matrix enforced, complete audit catalogue +
 query view for admins, attachments via signed URLs, input validation hardening,
@@ -137,6 +142,7 @@ query view for admins, attachments via signed URLs, input validation hardening,
 risks; privilege-escalation and attachment-access tests pass.
 
 ### Phase 5 — Observability & Ops
+
 **Goal:** operable and reproducible.
 **Deliverables:** structured logging with correlation IDs, health/readiness
 endpoints, basic metrics, full Docker Compose (app + DB + Redis), complete CI/CD
@@ -145,6 +151,7 @@ pipeline with coverage gates and image build. `observability.md`, `deployment.md
 end-to-end by correlation ID; CI enforces coverage.
 
 ### Phase 6 — Testing depth & Accessibility
+
 **Goal:** quality to target.
 **Deliverables:** backend ≥ 90% / frontend ≥ 80% coverage, E2E suite covering all
 critical scenarios, WCAG 2.1 AA accessibility checks, visual regression on the
@@ -153,6 +160,7 @@ four critical screens. `testing-strategy.md` finalized.
 screens; visual-regression baseline established.
 
 ### Phase 7 — Polish, Performance & Retrospective
+
 **Goal:** finish with evidence of judgment.
 **Deliverables:** performance pass (queue queries, N+1 checks, payload sizes),
 ADRs finalized, `retrospective.md` (assumptions that proved wrong, risks
@@ -164,28 +172,29 @@ clean and green.
 
 ## Documentation plan — every document to be produced
 
-| # | Document | Phase |
-|---|----------|-------|
-| 1 | `README.md` (root) | 0 ✅ |
-| 2 | `CONTRIBUTING.md` | 0 ✅ |
-| 3 | `docs/README.md` (index) | 0 ✅ |
-| 4 | `docs/project-plan.md` | 0 ✅ |
-| 5 | `docs/requirements.md` | 0 ✅ |
-| 6 | `docs/state-machine.md` | 0 ✅ |
-| 7 | `docs/authorization-matrix.md` | 0 ✅ |
-| 8 | `docs/data-model.md` (ER) | 0 ✅ |
-| 9 | `docs/success-criteria.md` | 0 ✅ |
-| 10 | `docs/architecture.md` | 1 |
-| 11 | `docs/api-spec.md` | 1/2 |
-| 12 | `docs/security-privacy.md` (threat model) | 1/4 |
-| 13 | `docs/audit-logging.md` | 4 |
-| 14 | `docs/observability.md` | 5 |
-| 15 | `docs/deployment.md` | 5 |
-| 16 | `docs/testing-strategy.md` | 2/6 |
-| 17 | `docs/adr/` — template + 0001–0006 (more as decisions arise) | 🟡 ongoing |
-| 18 | `docs/retrospective.md` | 7 |
+| #   | Document                                                     | Phase      |
+| --- | ------------------------------------------------------------ | ---------- |
+| 1   | `README.md` (root)                                           | 0 ✅       |
+| 2   | `CONTRIBUTING.md`                                            | 0 ✅       |
+| 3   | `docs/README.md` (index)                                     | 0 ✅       |
+| 4   | `docs/project-plan.md`                                       | 0 ✅       |
+| 5   | `docs/requirements.md`                                       | 0 ✅       |
+| 6   | `docs/state-machine.md`                                      | 0 ✅       |
+| 7   | `docs/authorization-matrix.md`                               | 0 ✅       |
+| 8   | `docs/data-model.md` (ER)                                    | 0 ✅       |
+| 9   | `docs/success-criteria.md`                                   | 0 ✅       |
+| 10  | `docs/architecture.md`                                       | 1 ✅       |
+| 11  | `docs/api-spec.md`                                           | 1/2        |
+| 12  | `docs/security-privacy.md` (threat model)                    | 1/4        |
+| 13  | `docs/audit-logging.md`                                      | 4          |
+| 14  | `docs/observability.md`                                      | 5          |
+| 15  | `docs/deployment.md`                                         | 5          |
+| 16  | `docs/testing-strategy.md`                                   | 2/6        |
+| 17  | `docs/adr/` — template + 0001–0006 (more as decisions arise) | 🟡 ongoing |
+| 18  | `docs/retrospective.md`                                      | 7          |
 
 ### Planned ADRs (initial set)
+
 - ADR-0001 — Backend framework choice (NestJS vs Express/Fastify)
 - ADR-0002 — PostgreSQL as system of record
 - ADR-0003 — Claim concurrency strategy (DB-atomic conditional update)
@@ -193,6 +202,7 @@ clean and green.
 - ADR-0005 — Real-time transport (WebSockets) & fan-out
 - ADR-0006 — AuthN/AuthZ approach (sessions/JWT + role+state matrix)
 - ADR-0007 — Attachment storage & signed-URL access
+- ADR-0008 — Deployment target (local Docker Compose) ✅
 
 ---
 
@@ -229,6 +239,7 @@ Built out in Phase 1 (nothing created yet beyond docs):
 ```
 
 ### Other required setup (non-doc)
+
 - Package manager + lockfile; shared TS config; ESLint + Prettier.
 - Prisma schema + initial migration; seed script with test users per role.
 - `.env.example` enumerating required env vars (DB URL, Redis URL, JWT secret…).
@@ -239,40 +250,41 @@ Built out in Phase 1 (nothing created yet beyond docs):
 
 ## Capability map — capability → implementation → demonstrating artifact
 
-Addresses the reviewer's ask to separate *technologies used* from *engineering
-capabilities*, each with evidence.
+Addresses the reviewer's ask to separate _technologies used_ from _engineering
+capabilities_, each with evidence.
 
-| Engineering capability | Where it's implemented | Artifact that demonstrates it |
-|------------------------|------------------------|-------------------------------|
-| Workflow modeling | Consultation state machine | `state-machine.md` diagram + transition tests |
-| Concurrency control | DB-atomic claim | Sequence diagram + concurrency test (two claimers) |
-| AuthZ (role + state) | Authorization matrix + guards | `authorization-matrix.md` + RBAC tests |
-| Real-time systems | WebSockets + Redis pub/sub | Architecture sequence diagram + live-update E2E |
-| Data modeling | Prisma schema | `data-model.md` ER diagram + migrations |
-| Security & privacy | Signed URLs, separation of duties | `security-privacy.md` threat model + privacy tests |
-| Observability | Structured logs + correlation IDs | `observability.md` + a traced-request example |
-| Testing discipline | Test pyramid + gates | `testing-strategy.md` + CI coverage report |
-| Delivery / DevOps | Docker Compose + GitHub Actions | `deployment.md` + green pipeline |
-| Engineering judgment | ADRs + retrospective | `docs/adr/` + `retrospective.md` |
+| Engineering capability | Where it's implemented            | Artifact that demonstrates it                      |
+| ---------------------- | --------------------------------- | -------------------------------------------------- |
+| Workflow modeling      | Consultation state machine        | `state-machine.md` diagram + transition tests      |
+| Concurrency control    | DB-atomic claim                   | Sequence diagram + concurrency test (two claimers) |
+| AuthZ (role + state)   | Authorization matrix + guards     | `authorization-matrix.md` + RBAC tests             |
+| Real-time systems      | WebSockets + Redis pub/sub        | Architecture sequence diagram + live-update E2E    |
+| Data modeling          | Prisma schema                     | `data-model.md` ER diagram + migrations            |
+| Security & privacy     | Signed URLs, separation of duties | `security-privacy.md` threat model + privacy tests |
+| Observability          | Structured logs + correlation IDs | `observability.md` + a traced-request example      |
+| Testing discipline     | Test pyramid + gates              | `testing-strategy.md` + CI coverage report         |
+| Delivery / DevOps      | Docker Compose + GitHub Actions   | `deployment.md` + green pipeline                   |
+| Engineering judgment   | ADRs + retrospective              | `docs/adr/` + `retrospective.md`                   |
 
 ---
 
 ## Risk register (initial)
 
-| Risk | Likelihood | Impact | Mitigation |
-|------|-----------|--------|------------|
-| Scope creep — too many technologies, shallow depth | High | High | MVP-first; defer breadth to later phases; this plan |
-| Concurrency bugs in claim logic | Medium | High | DB-level guarantee + dedicated concurrency tests early |
-| Real-time complexity (reconnect, fan-out) | Medium | Medium | Persisted messaging MVP first; real-time isolated to Phase 3 |
-| Privacy/authorization gaps | Medium | High | Central authz matrix; privacy tests; threat model in Phase 4 |
-| Time overrun as a solo build | High | Medium | Timeboxed phases; each phase independently demonstrable |
-| Accessibility/visual-regression left too late | Medium | Low | Scoped to 4 critical screens; dedicated Phase 6 |
+| Risk                                               | Likelihood | Impact | Mitigation                                                   |
+| -------------------------------------------------- | ---------- | ------ | ------------------------------------------------------------ |
+| Scope creep — too many technologies, shallow depth | High       | High   | MVP-first; defer breadth to later phases; this plan          |
+| Concurrency bugs in claim logic                    | Medium     | High   | DB-level guarantee + dedicated concurrency tests early       |
+| Real-time complexity (reconnect, fan-out)          | Medium     | Medium | Persisted messaging MVP first; real-time isolated to Phase 3 |
+| Privacy/authorization gaps                         | Medium     | High   | Central authz matrix; privacy tests; threat model in Phase 4 |
+| Time overrun as a solo build                       | High       | Medium | Timeboxed phases; each phase independently demonstrable      |
+| Accessibility/visual-regression left too late      | Medium     | Low    | Scoped to 4 critical screens; dedicated Phase 6              |
 
 ---
 
 ## Success criteria (summary)
 
 Full, measurable list lives in `success-criteria.md`. Headline targets:
+
 - Full consultation lifecycle works end-to-end (demonstrable).
 - Exactly one clinician wins a contested claim (provable by test).
 - Admins provably cannot read clinical content.

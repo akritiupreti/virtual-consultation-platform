@@ -1,0 +1,35 @@
+# Phase 1: database only. The full stack (app + Redis) is assembled in Phase 5.
+# Variable values are read from .env (see .env.example).
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: vcp-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-vcp}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-vcp_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-vcp}
+    ports:
+      # Host port is configurable to avoid clashing with other local Postgres
+      # instances; container port is always 5432. Override POSTGRES_PORT in .env.
+      - '${POSTGRES_PORT:-5432}:5432'
+    volumes:
+      - vcp-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-vcp} -d ${POSTGRES_DB:-vcp}']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Redis is introduced in Phase 3 (presence + pub/sub fan-out).
+  # See docs/adr/0004-redis-responsibilities.md.
+  # redis:
+  #   image: redis:7-alpine
+  #   container_name: vcp-redis
+  #   restart: unless-stopped
+  #   ports:
+  #     - '6379:6379'
+
+volumes:
+  vcp-db-data:

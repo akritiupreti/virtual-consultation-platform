@@ -3,8 +3,8 @@
 How the Virtual Consultation Platform is structured, why, and where each
 responsibility lives. This document is **diagram-first**: each section opens with
 the picture, then explains it. It is updated as capabilities land — the claim-race
-and lifecycle sequence diagrams land here in Phase 2 (§4); the real-time fan-out
-sequence arrives in Phase 3.
+and lifecycle sequence diagrams landed in Phase 2 (§4); the real-time fan-out,
+claim-TTL auto-requeue and reconnection sequences land in Phase 3 (§7).
 
 Related: [data model](data-model.md) · [state machine](state-machine.md) ·
 [authorization matrix](authorization-matrix.md) · [ADRs](adr/).
@@ -25,30 +25,32 @@ flowchart LR
 
     subgraph server [Backend · NestJS]
         api[REST API]
-        ws["WebSocket gateway<br/>(Phase 3)"]
+        ws["WebSocket gateway<br/>(socket.io · Phase 3)"]
     end
 
     db[(PostgreSQL<br/>system of record)]
-    redis[("Redis<br/>presence · pub/sub<br/>(Phase 3)")]
+    redis[("Redis<br/>presence · pub/sub<br/>cached positions")]
     obj[("Object storage<br/>attachments · Phase 4")]
 
     patient --> spa
     clinician --> spa
     admin --> spa
     spa -->|HTTPS / JSON| api
-    spa -.->|WSS| ws
+    spa -->|WSS| ws
     api --> db
-    ws -.-> redis
-    api -.-> redis
+    ws --> redis
+    api --> redis
     api -.-> obj
 
     classDef later stroke-dasharray: 4 3;
-    class ws,redis,obj later
+    class obj later
 ```
 
-Solid edges are live after Phase 1–2; dashed elements are introduced in later
-phases (labelled). The backend is the only thing that touches the database —
-clients never do.
+The REST API and the WebSocket gateway (Phase 3) are both live; object storage
+(dashed) arrives in Phase 4. The backend is the only thing that touches the
+database — clients never do. Redis is reachable from both the gateway (pub/sub
+fan-out, presence) and the API (cached positions), but it is **not** a source of
+truth ([ADR-0004](adr/0004-redis-responsibilities.md)); PostgreSQL is.
 
 ---
 
@@ -77,6 +79,11 @@ flowchart TB
         sm[common/state-machine<br/>transition registry]
     end
 
+    subgraph phase3 [Phase 3 — real-time ✅]
+        realtime[RealtimeModule<br/>WS gateway · fan-out<br/>presence · position cache]
+        claimttl[ClaimTtlService<br/>start-TTL auto-requeue]
+    end
+
     subgraph phase5 [Phase 5]
         common[CommonModule<br/>correlation IDs · metrics]
     end
@@ -92,6 +99,12 @@ flowchart TB
     consult --> authz
     consult --> sm
     authz --> sm
+    consult --> realtime
+    messaging --> realtime
+    summaries --> realtime
+    realtime --- claimttl
+    claimttl --> audit
+    realtime --> prisma
 
     classDef later stroke-dasharray: 4 3;
     class common later
@@ -104,19 +117,20 @@ are plain, dependency-free units (a matrix, a policy function, a transition
 registry) that both the controllers and services read — the single definition of
 who-may-do-what-when (invariants 1 & 4).
 
-| Module                 | Responsibility                                                                                          | Phase                 |
-| ---------------------- | ------------------------------------------------------------------------------------------------------- | --------------------- |
-| `ConfigModule`         | Load env (`../.env`), expose typed config                                                               | 1                     |
-| `PrismaModule`         | Single global Prisma client; connection lifecycle                                                       | 1                     |
-| `AuthModule`           | Register (patient), login, JWT issue/verify, `GET /auth/me`                                             | 1                     |
-| `AppController`        | Unauthenticated `GET /health` liveness                                                                  | 1                     |
-| `ConsultationsModule`  | State-machine enforcement, DB-atomic claim, lifecycle, derived priority+FIFO queue, "N ahead" positions | 2 ✅ (real-time in 3) |
-| `MessagingModule`      | Persisted messages (REST); WebSocket room in Phase 3                                                    | 2 ✅ / 3              |
-| `SummariesModule`      | Draft (assigned clinician) + doctor-only finalize; immutable                                            | 2 ✅                  |
-| `AuditModule`          | Append-only audit events (no clinical content); admin-only read                                         | 2 ✅ / 4              |
-| `common/authz`         | Authorization matrix, role+state+ownership policy, `RolesGuard`                                         | 2 ✅                  |
-| `common/state-machine` | Transition registry (the central bank of transitions)                                                   | 2 ✅                  |
-| `CommonModule`         | Validation helpers, error mapping, correlation-ID middleware, metrics                                   | 5                     |
+| Module                 | Responsibility                                                                                              | Phase                 |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------- | --------------------- |
+| `ConfigModule`         | Load env (`../.env`), expose typed config                                                                   | 1                     |
+| `PrismaModule`         | Single global Prisma client; connection lifecycle                                                           | 1                     |
+| `AuthModule`           | Register (patient), login, JWT issue/verify, `GET /auth/me`                                                 | 1                     |
+| `AppController`        | Unauthenticated `GET /health` liveness                                                                      | 1                     |
+| `ConsultationsModule`  | State-machine enforcement, DB-atomic claim, lifecycle, derived priority+FIFO queue, "N ahead" positions     | 2 ✅ (real-time in 3) |
+| `MessagingModule`      | Persisted messages (REST); WebSocket room in Phase 3                                                        | 2 ✅ / 3              |
+| `SummariesModule`      | Draft (assigned clinician) + doctor-only finalize; immutable                                                | 2 ✅                  |
+| `AuditModule`          | Append-only audit events (no clinical content); admin-only read                                             | 2 ✅ / 4              |
+| `common/authz`         | Authorization matrix, role+state+ownership policy, `RolesGuard`                                             | 2 ✅                  |
+| `common/state-machine` | Transition registry (the central bank of transitions)                                                       | 2 ✅                  |
+| `RealtimeModule`       | WebSocket gateway (JWT handshake, room authz), Redis fan-out + presence + position cache, claim-TTL sweeper | 3 ✅                  |
+| `CommonModule`         | Validation helpers, error mapping, correlation-ID middleware, metrics                                       | 5                     |
 
 ### Authorization seams (where the invariants are enforced)
 
@@ -285,3 +299,111 @@ integration/E2E and coverage gates are layered on in Phases 2–6
 ([project-plan.md](project-plan.md)). The repo is an **npm workspaces monorepo**
 (`backend`, `frontend`) sharing one TypeScript base config, ESLint (flat) and
 Prettier, with Conventional-Commit enforcement via husky + commitlint.
+
+---
+
+## 7. Real-time & concurrency hardening (Phase 3)
+
+The triage queue and the consultation room go **live** over WebSockets
+([ADR-0005](adr/0005-realtime-websockets.md)), fanned out across API instances by
+Redis pub/sub ([ADR-0004](adr/0004-redis-responsibilities.md)). The transport is
+socket.io with the `@socket.io/redis-adapter`
+([ADR-0009](adr/0009-realtime-implementation.md)); the claim-start TTL is a
+DB-authoritative sweeper ([ADR-0010](adr/0010-claim-start-ttl.md)). Two rules keep
+the real-time layer honest:
+
+- **PostgreSQL stays authoritative.** Every event is emitted _after_ the DB change
+  commits; clients treat events as _signals_ and reconcile the real state from REST
+  (and from the DB behind it). Redis is speed/ephemerality only.
+- **The matrix governs WebSockets too.** The JWT is verified on the handshake;
+  joining the `queue` room is clinician-only and joining a `consultation:<id>` room
+  runs the same `authorizeConsultationAction` (role → state → ownership) as REST —
+  so admins and non-participants are refused (invariants 3 & 4).
+
+Events (no clinical content beyond what the room's members may already see):
+`queue:updated` (signal → re-fetch the queue), `consultation:updated`
+(state changed), `message:created` (into the private room only),
+`position:updated` (a patient's "N ahead"), `presence:updated`.
+
+### 7.1 Real-time fan-out across instances
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant N1 as Nurse A (API-1)
+    participant S as ConsultationsService (API-1)
+    participant DB as PostgreSQL
+    participant RT as RealtimeService (API-1)
+    participant R as Redis (pub/sub)
+    participant G2 as Gateway (API-2)
+    participant N2 as Nurse B (API-2)
+
+    Note over N2: Nurse B is subscribed to the "queue" room on a different instance
+    N1->>S: POST /consultations/:id/claim
+    S->>DB: atomic conditional UPDATE (→ CLAIMED)
+    DB-->>S: 1 row (winner)
+    S->>RT: notifyQueueChanged("claimed", id)
+    RT->>R: publish queue:updated → room "queue"
+    R-->>G2: deliver to subscribers on API-2
+    G2-->>N2: emit queue:updated
+    N2->>S: GET /consultations/queue (reconcile authoritative state)
+    Note over RT,DB: positions recomputed from the DB and pushed to each waiting patient
+```
+
+A change made on one instance reaches a subscriber on another because the socket
+adapter publishes to Redis and every instance's gateway is subscribed. Without
+Redis the same path works within a single instance (in-memory adapter) and simply
+does not cross instances — core flows are unaffected.
+
+### 7.2 Claim-start TTL auto-requeue (FR-12 / SC-4)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as Clinician
+    participant S as ConsultationsService
+    participant DB as PostgreSQL
+    participant SW as ClaimTtlService (sweeper)
+    participant A as AuditService
+    participant RT as RealtimeService
+
+    C->>S: POST /consultations/:id/claim → CLAIMED (claimed_at set)
+    Note over C: Clinician never starts the session…
+    loop every CLAIM_TTL_SWEEP_INTERVAL_SECONDS
+        SW->>DB: find CLAIMED, started_at IS NULL, claimed_at < now − TTL
+        DB-->>SW: overdue case(s)
+        SW->>DB: atomic UPDATE WHERE state=CLAIMED AND started_at IS NULL<br/>(→ QUEUED, claimed_by=NULL)
+        DB-->>SW: 1 row (requeued) · 0 if started in time / already swept
+        SW->>A: audit CONSULTATION_REQUEUED (system actor)
+        SW->>RT: broadcast consultation:updated + notifyQueueChanged("requeued")
+    end
+```
+
+The requeue uses the same atomic conditional-update pattern as the claim, so a
+race with a legitimate `start` is resolved in the database (exactly one of them
+affects the row) and two instances sweeping at once is safe. The sweeper reconciles
+from the DB on every tick, so it survives restarts.
+
+### 7.3 Reconnection — reconcile from authoritative state
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Cl as Client
+    participant G as Gateway
+    participant DB as PostgreSQL
+
+    Note over Cl,DB: Connection drops (network blip). Server state is UNCHANGED.
+    Cl-->>G: socket disconnects (presence decremented)
+    Cl->>G: reconnect with JWT in handshake
+    G->>G: verify token, re-join user room
+    Cl->>G: re-emit subscribe:queue / join:consultation
+    G->>G: re-authorize (matrix) and re-join rooms
+    Cl->>DB: GET queue / consultation / messages (via REST)
+    Note over Cl: UI reconciles to the server's authoritative state — no lost or duplicated work
+```
+
+Connection loss changes nothing server-side (state-machine.md "connection loss"
+exception). On reconnect the client re-authenticates, the gateway re-authorizes
+every room join, and the UI pulls the authoritative state over REST — missed
+events don't matter because the client re-reads the source of truth.

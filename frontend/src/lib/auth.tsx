@@ -1,5 +1,6 @@
 import { createContext, ReactNode, useCallback, useContext, useMemo, useState } from 'react';
 import { api, AuthUser, getToken, setToken } from './api';
+import { disconnectRealtime } from './realtime';
 
 const USER_KEY = 'vcp_user';
 
@@ -59,6 +60,7 @@ export function AuthProvider({ children }: { children: ReactNode }): JSX.Element
   );
 
   const logout = useCallback(() => {
+    disconnectRealtime();
     setToken(null);
     storeUser(null);
     setUser(null);

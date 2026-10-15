@@ -1,4 +1,5 @@
-# Phase 1: database only. The full stack (app + Redis) is assembled in Phase 5.
+# Phase 1: database only. Phase 3 adds Redis (presence + pub/sub fan-out + cached
+# queue positions, ADR-0004). The full app container is assembled in Phase 5.
 # Variable values are read from .env (see .env.example).
 
 services:
@@ -22,14 +23,21 @@ services:
       timeout: 5s
       retries: 10
 
-  # Redis is introduced in Phase 3 (presence + pub/sub fan-out).
-  # See docs/adr/0004-redis-responsibilities.md.
-  # redis:
-  #   image: redis:7-alpine
-  #   container_name: vcp-redis
-  #   restart: unless-stopped
-  #   ports:
-  #     - '6379:6379'
+  # Redis — ephemeral real-time state only; never a source of truth
+  # (ADR-0004: presence, pub/sub fan-out, cached queue positions).
+  redis:
+    image: redis:7-alpine
+    container_name: vcp-redis
+    restart: unless-stopped
+    ports:
+      # Host port is configurable to avoid clashes with other local Redis
+      # instances; container port is always 6379. Override REDIS_PORT in .env.
+      - '${REDIS_PORT:-6379}:6379'
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
 volumes:
   vcp-db-data:

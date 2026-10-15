@@ -1,8 +1,9 @@
 # API Specification
 
-The REST surface for the MVP vertical slice (Phase 2). WebSocket event contracts
-for live queue/room updates are added in Phase 3. Authorization for every endpoint
-derives from the single [authorization matrix](authorization-matrix.md) and the
+The REST surface for the MVP vertical slice (Phase 2) plus the **WebSocket event
+contracts** for live queue/room updates (Phase 3 — see [§WebSocket API](#websocket-api-phase-3)).
+Authorization for every endpoint _and every WebSocket room_ derives from the single
+[authorization matrix](authorization-matrix.md) and the
 [state machine](state-machine.md); see the request pipeline in
 [architecture.md §2](architecture.md).
 
@@ -91,10 +92,77 @@ contents, or summary text (invariants 5 & 6).
 ### Audit event catalogue (Phase 2 subset)
 
 `CONSULTATION_REQUESTED`, `CONSULTATION_ENQUEUED`, `CONSULTATION_CLAIMED`,
-`CONSULTATION_STARTED`, `CONSULTATION_COMPLETED`, `CONSULTATION_CANCELLED`,
-`PRIORITY_CHANGED`, `MESSAGE_SENT`, `SUMMARY_DRAFTED`, `SUMMARY_FINALIZED`.
+`CONSULTATION_REQUEUED`, `CONSULTATION_STARTED`, `CONSULTATION_COMPLETED`,
+`CONSULTATION_CANCELLED`, `PRIORITY_CHANGED`, `MESSAGE_SENT`, `SUMMARY_DRAFTED`,
+`SUMMARY_FINALIZED`.
+
+`CONSULTATION_REQUEUED` (Phase 3) is the claim-start-TTL auto-requeue: a **system**
+event (no actor) with metadata `{ reason: "start_ttl_expired", ttlSeconds,
+previousClaimedBy }` — who/what/when only, never clinical content.
 
 The full catalogue and log schema are formalized in `audit-logging.md` (Phase 4).
+
+## WebSocket API (Phase 3)
+
+Live triage-queue and consultation-room updates over **socket.io** at the same
+origin as the REST API (`VITE_API_URL`), fanned out across instances by Redis
+([ADR-0004](adr/0004-redis-responsibilities.md)/[0005](adr/0005-realtime-websockets.md)/[0009](adr/0009-realtime-implementation.md)).
+Events are **signals**: the server stays authoritative and clients reconcile real
+state via the REST endpoints above.
+
+### Connection & handshake
+
+- Connect with the JWT in the socket handshake: `io(BASE_URL, { auth: { token } })`
+  (a `Bearer` `Authorization` header is also accepted).
+- The token is verified on connect with the same `JWT_SECRET` as REST. A
+  missing/invalid/expired token is **disconnected** immediately.
+- On connect the server auto-joins the user to their personal room `user:<id>`.
+
+### Rooms & authorization
+
+Room membership is granted only after the same authorization check as REST
+(role → state → ownership). No payload carries clinical content beyond what the
+room's members are already permitted to read (data minimization, invariants 3 & 6).
+
+| Room                | Who may join                     | Authorized by              |
+| ------------------- | -------------------------------- | -------------------------- |
+| `queue`             | Nurse / Doctor                   | matrix `VIEW_QUEUE`        |
+| `consultation:<id>` | That consultation's participants | matrix `VIEW_CONSULTATION` |
+| `user:<id>`         | That user only (auto-joined)     | the authenticated identity |
+
+Admins can connect (to use REST admin features) but are **refused** every clinical
+room — separation of duties holds over WebSockets.
+
+### Client → server
+
+Each returns an ack `{ ok: boolean, error?: 'unauthorized'|'forbidden'|'not_found'|'bad_request' }`.
+
+| Event                | Payload              | Effect                                    |
+| -------------------- | -------------------- | ----------------------------------------- |
+| `subscribe:queue`    | —                    | Join the `queue` room (clinicians only)   |
+| `join:consultation`  | `{ consultationId }` | Join `consultation:<id>` if a participant |
+| `leave:consultation` | `{ consultationId }` | Leave the room                            |
+
+### Server → client
+
+| Event                  | Payload                                                          | Trigger                                                                     |
+| ---------------------- | ---------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `queue:updated`        | `{ reason, consultationId? }`                                    | enqueue · priority change · claim · requeue · complete · cancel (FR-18/C18) |
+| `consultation:updated` | `{ consultationId, state }`                                      | any state change on the consultation                                        |
+| `message:created`      | `{ consultationId, message: { id, senderId, body, createdAt } }` | a new message (private room only; body is allowed here)                     |
+| `position:updated`     | `{ consultationId, state, position }`                            | a patient's live "N ahead" changed (C2/FR-4)                                |
+| `presence:updated`     | `{ consultationId, participants: [{ userId, online }] }`         | a participant connected/disconnected/joined/left                            |
+
+`reason` ∈ `enqueued | priority_changed | claimed | requeued | completed | cancelled | state_changed`.
+
+### Reconnection & degradation
+
+- socket.io auto-reconnects; on reconnect the client re-authenticates, re-emits
+  its `subscribe`/`join`, and **reconciles from REST**. Connection loss never
+  changes server state ([state-machine.md](state-machine.md)).
+- If `REDIS_URL` is unset/unreachable the gateway degrades to a single-instance
+  in-memory adapter and in-memory presence; all events still flow within one
+  instance and core flows are unaffected.
 
 ## Health
 

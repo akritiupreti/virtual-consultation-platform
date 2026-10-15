@@ -172,26 +172,26 @@ clean and green.
 
 ## Documentation plan — every document to be produced
 
-| #   | Document                                                     | Phase      |
-| --- | ------------------------------------------------------------ | ---------- |
-| 1   | `README.md` (root)                                           | 0 ✅       |
-| 2   | `CONTRIBUTING.md`                                            | 0 ✅       |
-| 3   | `docs/README.md` (index)                                     | 0 ✅       |
-| 4   | `docs/project-plan.md`                                       | 0 ✅       |
-| 5   | `docs/requirements.md`                                       | 0 ✅       |
-| 6   | `docs/state-machine.md`                                      | 0 ✅       |
-| 7   | `docs/authorization-matrix.md`                               | 0 ✅       |
-| 8   | `docs/data-model.md` (ER)                                    | 0 ✅       |
-| 9   | `docs/success-criteria.md`                                   | 0 ✅       |
-| 10  | `docs/architecture.md`                                       | 1 ✅       |
-| 11  | `docs/api-spec.md`                                           | 1/2        |
-| 12  | `docs/security-privacy.md` (threat model)                    | 1/4        |
-| 13  | `docs/audit-logging.md`                                      | 4          |
-| 14  | `docs/observability.md`                                      | 5          |
-| 15  | `docs/deployment.md`                                         | 5          |
-| 16  | `docs/testing-strategy.md`                                   | 2/6        |
-| 17  | `docs/adr/` — template + 0001–0006 (more as decisions arise) | 🟡 ongoing |
-| 18  | `docs/retrospective.md`                                      | 7          |
+| #   | Document                                                                | Phase      |
+| --- | ----------------------------------------------------------------------- | ---------- |
+| 1   | `README.md` (root)                                                      | 0 ✅       |
+| 2   | `CONTRIBUTING.md`                                                       | 0 ✅       |
+| 3   | `docs/README.md` (index)                                                | 0 ✅       |
+| 4   | `docs/project-plan.md`                                                  | 0 ✅       |
+| 5   | `docs/requirements.md`                                                  | 0 ✅       |
+| 6   | `docs/state-machine.md`                                                 | 0 ✅       |
+| 7   | `docs/authorization-matrix.md`                                          | 0 ✅       |
+| 8   | `docs/data-model.md` (ER)                                               | 0 ✅       |
+| 9   | `docs/success-criteria.md`                                              | 0 ✅       |
+| 10  | `docs/architecture.md`                                                  | 1 ✅       |
+| 11  | `docs/api-spec.md`                                                      | 1/2        |
+| 12  | `docs/security-privacy.md` (threat model)                               | 1/4        |
+| 13  | `docs/audit-logging.md`                                                 | 4          |
+| 14  | `docs/observability.md`                                                 | 5          |
+| 15  | `docs/deployment.md`                                                    | 5          |
+| 16  | `docs/testing-strategy.md`                                              | 2/6        |
+| 17  | `docs/adr/` — template + 0001–0006, 0008–0010 (more as decisions arise) | 🟡 ongoing |
+| 18  | `docs/retrospective.md`                                                 | 7          |
 
 ### Planned ADRs (initial set)
 
@@ -203,6 +203,8 @@ clean and green.
 - ADR-0006 — AuthN/AuthZ approach (sessions/JWT + role+state matrix)
 - ADR-0007 — Attachment storage & signed-URL access
 - ADR-0008 — Deployment target (local Docker Compose) ✅
+- ADR-0009 — Real-time implementation (socket.io + Redis adapter) ✅
+- ADR-0010 — Claim-start TTL via a DB-authoritative sweeper ✅
 
 ---
 

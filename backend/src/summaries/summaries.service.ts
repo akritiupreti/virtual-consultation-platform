@@ -6,6 +6,7 @@ import { Action } from '../common/authz/authorization-matrix';
 import { ActingUser, authorizeConsultationAction } from '../common/authz/policy';
 import { SummaryFinalizedException } from '../common/errors/domain-exceptions';
 import { PrismaService } from '../prisma/prisma.service';
+import { RealtimeService } from '../realtime/realtime.service';
 import { DraftSummaryDto } from './dto/draft-summary.dto';
 
 export interface SummaryView {
@@ -27,6 +28,7 @@ export class SummariesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly realtime: RealtimeService,
   ) {}
 
   /** Assigned clinician drafts (or revises) the summary. A finalized summary is immutable. */
@@ -99,6 +101,12 @@ export class SummariesService {
       actorId: user.id,
       eventType: AUDIT_EVENTS.SUMMARY_FINALIZED,
       consultationId,
+    });
+    // Notify the room + the patient that the summary is finalized (SUMMARIZED).
+    this.realtime.broadcastConsultationUpdated({
+      id: consultationId,
+      patientId: consultation.patientId,
+      state: ConsultationState.SUMMARIZED,
     });
 
     return this.toView(summary);

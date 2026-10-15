@@ -2,12 +2,14 @@ import { FormEvent, JSX, useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { ApiError, api, ConsultationDetail, Message } from '../lib/api';
 import { useAuth } from '../lib/auth';
+import { PresenceParticipant, useConsultationRoom } from '../lib/realtime';
 
 export default function ConsultationRoom(): JSX.Element {
   const { id = '' } = useParams();
   const { user } = useAuth();
   const [detail, setDetail] = useState<ConsultationDetail | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
+  const [presence, setPresence] = useState<PresenceParticipant[]>([]);
   const [draft, setDraft] = useState('');
   const [text, setText] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -35,9 +37,17 @@ export default function ConsultationRoom(): JSX.Element {
     void loadDetail();
   }, [loadDetail]);
 
+  // Live room: new messages, state changes, and participant presence (ADR-0009).
+  // The slow interval is only a fallback for when the socket is unavailable.
+  useConsultationRoom(id, {
+    onMessage: (m) =>
+      setMessages((prev) => (prev.some((x) => x.id === m.id) ? prev : [...prev, m])),
+    onConsultationUpdated: () => void loadDetail(),
+    onPresence: setPresence,
+  });
   useEffect(() => {
     void loadMessages();
-    const timer = setInterval(() => void loadMessages(), 3000);
+    const timer = setInterval(() => void loadMessages(), 15000);
     return () => clearInterval(timer);
   }, [loadMessages]);
 
@@ -93,6 +103,18 @@ export default function ConsultationRoom(): JSX.Element {
         <span className="badge" style={{ marginLeft: 8 }}>
           {detail.state}
         </span>
+        {presence.length > 0 && (
+          <span className="muted" style={{ marginLeft: 12 }}>
+            {presence
+              .map(
+                (p) =>
+                  `${p.userId === detail.patientId ? 'Patient' : 'Clinician'}: ${
+                    p.online ? 'online' : 'offline'
+                  }`,
+              )
+              .join(' · ')}
+          </span>
+        )}
       </div>
       {error && <p className="error">{error}</p>}
 

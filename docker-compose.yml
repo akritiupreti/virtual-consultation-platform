@@ -1,6 +1,10 @@
-# Phase 1: database only. Phase 3 adds Redis (presence + pub/sub fan-out + cached
-# queue positions, ADR-0004). The full app container is assembled in Phase 5.
-# Variable values are read from .env (see .env.example).
+# Full stack (Phase 5): `docker compose up` brings up PostgreSQL, Redis, the
+# backend API and the frontend together — one command, the whole system (SC-14,
+# NFR-8). Deployment target is local Docker Compose (ADR-0008). Secrets and tunables
+# come from the single git-ignored root .env (see .env.example); the backend's
+# connection strings and ports are overridden here so the containers talk over the
+# internal Compose network (db:5432 / redis:6379) regardless of the host-port
+# overrides a developer uses locally.
 
 services:
   db:
@@ -39,5 +43,68 @@ services:
       timeout: 5s
       retries: 10
 
+  # Backend API (NestJS). Built from the repo root (monorepo lockfile). It waits
+  # for the database and Redis to be healthy, applies migrations on start
+  # (entrypoint), then serves on container port 3000, published on BACKEND_PORT.
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: vcp-backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    # Secrets / tunables (JWT, attachments, throttle, TTL, seed) load from .env…
+    env_file:
+      - .env
+    # …while connection strings, ports and origins are pinned to the internal
+    # Compose network and the host-published ports (these override env_file).
+    environment:
+      NODE_ENV: production
+      PORT: '3000'
+      DATABASE_URL: postgresql://${POSTGRES_USER:-vcp}:${POSTGRES_PASSWORD:-vcp_dev_password}@db:5432/${POSTGRES_DB:-vcp}?schema=public
+      REDIS_URL: redis://redis:6379
+      CORS_ORIGIN: http://localhost:${FRONTEND_PORT:-8088}
+      ATTACHMENT_STORAGE_DIR: /app/backend/var/attachments
+    ports:
+      # Host port is configurable to avoid clashing with another local API
+      # (container port is always 3000). Override BACKEND_PORT in .env.
+      - '${BACKEND_PORT:-3100}:3000'
+    volumes:
+      # Persist the local attachment object store across restarts (ADR-0007).
+      - vcp-attachments:/app/backend/var/attachments
+    healthcheck:
+      # Liveness endpoint (no dependencies); readiness is GET /ready.
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "require('http').get('http://localhost:3000/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  # Frontend (React + Vite, served by nginx). VITE_API_URL is baked at build time
+  # and must point at the backend's HOST-published address (browser-reachable).
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      args:
+        VITE_API_URL: http://localhost:${BACKEND_PORT:-3100}
+    container_name: vcp-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - '${FRONTEND_PORT:-8088}:80'
+
 volumes:
   vcp-db-data:
+  vcp-attachments:

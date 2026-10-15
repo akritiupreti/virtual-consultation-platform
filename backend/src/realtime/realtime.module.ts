@@ -6,7 +6,7 @@ import { ClaimTtlService } from './claim-ttl.service';
 import { PresenceService } from './presence.service';
 import { RealtimeGateway } from './realtime.gateway';
 import { RealtimeService } from './realtime.service';
-import { redisClientProvider } from './redis.provider';
+import { REDIS_CLIENT, redisClientProvider } from './redis.provider';
 
 /**
  * Real-time module (Phase 3): the WebSocket gateway, the fan-out publisher, Redis
@@ -35,6 +35,8 @@ import { redisClientProvider } from './redis.provider';
     RealtimeGateway,
     ClaimTtlService,
   ],
-  exports: [RealtimeService],
+  // RealtimeService for event emission; REDIS_CLIENT so the readiness probe can
+  // reuse the single shared connection (ADR-0004) rather than opening its own.
+  exports: [RealtimeService, REDIS_CLIENT],
 })
 export class RealtimeModule {}

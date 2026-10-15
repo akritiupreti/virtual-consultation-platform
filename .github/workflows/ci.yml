@@ -41,8 +41,19 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Test (unit)
-        run: npm test
+      # Coverage is OBSERVE-ONLY in Phase 5: the report is produced and uploaded,
+      # but not gated. The ≥90% backend / ≥80% frontend gates are a Phase 6 concern
+      # (NFR-7 / SC-10/11), so effort stays on the critical scenarios until then.
+      - name: Test (unit) + coverage (observe-only)
+        run: npm run test:cov --workspace backend
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage
+          path: backend/coverage
+          if-no-files-found: ignore
 
   integration:
     name: integration · e2e (real Postgres)
@@ -105,3 +116,37 @@ jobs:
 
       - name: Test (e2e)
         run: npm run test:e2e --workspace backend
+
+  # Proves the full stack containerises and builds (SC-14 / ADR-0008). Images are
+  # built but NOT pushed — the capstone deploys to local Docker Compose only, so
+  # there is no registry and no deploy stage (and thus no registry secrets).
+  docker:
+    name: docker image build (no push)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: backend/Dockerfile
+          push: false
+          tags: vcp-backend:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: frontend/Dockerfile
+          push: false
+          tags: vcp-frontend:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

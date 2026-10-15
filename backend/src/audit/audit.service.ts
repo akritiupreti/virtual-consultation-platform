@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { CorrelationService } from '../common/correlation/correlation.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditEventType } from './audit-events';
 
@@ -13,11 +14,18 @@ export interface AuditEvent {
 
 @Injectable()
 export class AuditService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly correlation: CorrelationService,
+  ) {}
 
   /**
    * Append an audit record. Accepts an optional transaction client so the audit
-   * write commits atomically with the state change it describes.
+   * write commits atomically with the state change it describes. The active
+   * request's correlation ID is stamped into the metadata (who/what/when/where —
+   * a trace token, never clinical content) so an audited action can be tied back
+   * to its request/WS-event/sweep log lines (SC-15). Stored in `metadata` to avoid
+   * a schema migration; the admin query already returns metadata verbatim.
    */
   async record(event: AuditEvent, tx?: Prisma.TransactionClient): Promise<void> {
     const client = tx ?? this.prisma;
@@ -26,9 +34,28 @@ export class AuditService {
         actorId: event.actorId ?? null,
         eventType: event.eventType,
         consultationId: event.consultationId ?? null,
-        metadata: event.metadata,
+        metadata: this.withCorrelation(event.metadata),
       },
     });
+  }
+
+  /** Merge the correlation ID into object metadata without clobbering an explicit
+   * one; leaves non-object metadata untouched. */
+  private withCorrelation(metadata?: Prisma.InputJsonValue): Prisma.InputJsonValue | undefined {
+    const correlationId = this.correlation.getId();
+    if (!correlationId) {
+      return metadata;
+    }
+    if (metadata === null || metadata === undefined) {
+      return { correlationId };
+    }
+    if (typeof metadata === 'object' && !Array.isArray(metadata)) {
+      const obj = metadata as Record<string, unknown>;
+      return 'correlationId' in obj
+        ? metadata
+        : ({ ...obj, correlationId } as Prisma.InputJsonValue);
+    }
+    return metadata;
   }
 
   /**

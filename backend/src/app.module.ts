@@ -3,12 +3,16 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { LoggerModule } from 'nestjs-pino';
 import { AppController } from './app.controller';
 import { AttachmentsModule } from './attachments/attachments.module';
 import { AuditModule } from './audit/audit.module';
 import { AuthModule } from './auth/auth.module';
+import { CommonModule } from './common/common.module';
+import { buildLoggerParams } from './common/logging/logging.config';
 import { buildThrottlerOptions } from './common/throttler/throttler.config';
 import { ConsultationsModule } from './consultations/consultations.module';
+import { HealthModule } from './health/health.module';
 import { MessagingModule } from './messaging/messaging.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { RealtimeModule } from './realtime/realtime.module';
@@ -19,6 +23,11 @@ import { UsersModule } from './users/users.module';
   imports: [
     // Single source of env: the monorepo-root .env (falls back to a local one).
     ConfigModule.forRoot({ isGlobal: true, envFilePath: ['../.env', '.env'] }),
+    // Structured JSON logging with per-request correlation IDs (ADR-0013). Replaces
+    // the default Nest logger; see buildLoggerParams for the no-PII/clinical policy.
+    LoggerModule.forRoot(buildLoggerParams()),
+    // Correlation store + Prometheus metrics + request-timing interceptor (Phase 5).
+    CommonModule,
     // Drives the claim-start TTL sweeper (ADR-0010).
     ScheduleModule.forRoot(),
     // App-level rate limiting (ADR-0011); stricter limits on auth + uploads.
@@ -35,6 +44,8 @@ import { UsersModule } from './users/users.module';
     SummariesModule,
     AttachmentsModule,
     UsersModule,
+    // Readiness probe (/ready) — PostgreSQL gates, Redis is non-gating (ADR-0004).
+    HealthModule,
   ],
   controllers: [AppController],
   providers: [

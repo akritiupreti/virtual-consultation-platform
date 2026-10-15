@@ -6,6 +6,11 @@ import * as bcrypt from 'bcryptjs';
 import { io, Socket } from 'socket.io-client';
 import request from 'supertest';
 import { AppModule } from '../../src/app.module';
+import {
+  createCorrelationMiddleware,
+  DEFAULT_CORRELATION_HEADER,
+} from '../../src/common/correlation/correlation.middleware';
+import { CorrelationService } from '../../src/common/correlation/correlation.service';
 import { PrismaService } from '../../src/prisma/prisma.service';
 
 export const TEST_PASSWORD = 'Password123!';
@@ -39,6 +44,14 @@ export async function createTestApp(): Promise<TestContext> {
   assertTestDatabase();
   const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
   const app = moduleRef.createNestApplication();
+  // Mirror main.ts: correlation ID first, so responses carry x-correlation-id and
+  // the ID propagates into the domain services and audit (SC-15).
+  app.use(
+    createCorrelationMiddleware(
+      app.get(CorrelationService),
+      process.env.CORRELATION_ID_HEADER ?? DEFAULT_CORRELATION_HEADER,
+    ),
+  );
   app.useGlobalPipes(
     new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }),
   );

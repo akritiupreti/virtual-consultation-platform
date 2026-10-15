@@ -1,0 +1,4 @@
+# The container entrypoint must keep LF line endings or Alpine's /bin/sh fails to
+# run it (a CRLF shebang breaks exec). Force LF regardless of core.autocrlf.
+*.sh text eol=lf
+backend/docker-entrypoint.sh text eol=lf

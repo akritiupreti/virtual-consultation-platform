@@ -11,6 +11,7 @@ import {
   IllegalTransitionException,
 } from '../common/errors/domain-exceptions';
 import { PrismaService } from '../prisma/prisma.service';
+import { RealtimeService } from '../realtime/realtime.service';
 import { SubmitRequestDto } from './dto/submit-request.dto';
 
 /** Serving order within the queue (higher rank is served first). */
@@ -80,6 +81,7 @@ export class ConsultationsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly realtime: RealtimeService,
     config: ConfigService,
   ) {
     const configured = Number(config.get<string>('MAX_ACTIVE_CONSULTATIONS_PER_CLINICIAN'));
@@ -144,6 +146,10 @@ export class ConsultationsService {
       );
       return queued;
     });
+
+    // Live fan-out: clinicians refresh the queue, waiting patients get a fresh
+    // "N ahead" (this also warms the position cache read below).
+    await this.realtime.notifyQueueChanged('enqueued', consultation.id);
 
     return {
       id: consultation.id,
@@ -269,6 +275,13 @@ export class ConsultationsService {
       eventType: AUDIT_EVENTS.CONSULTATION_CLAIMED,
       consultationId: id,
     });
+    // The case left the queue (positions shift) and its room state changed.
+    this.realtime.broadcastConsultationUpdated({
+      id,
+      patientId: existing.patientId,
+      state: ConsultationState.CLAIMED,
+    });
+    await this.realtime.notifyQueueChanged('claimed', id);
     return this.getOne(user, id);
   }
 
@@ -298,6 +311,11 @@ export class ConsultationsService {
       eventType: AUDIT_EVENTS.CONSULTATION_STARTED,
       consultationId: id,
     });
+    this.realtime.broadcastConsultationUpdated({
+      id,
+      patientId: existing.patientId,
+      state: ConsultationState.IN_SESSION,
+    });
     return this.getOne(user, id);
   }
 
@@ -320,6 +338,12 @@ export class ConsultationsService {
       eventType: AUDIT_EVENTS.CONSULTATION_COMPLETED,
       consultationId: id,
     });
+    this.realtime.broadcastConsultationUpdated({
+      id,
+      patientId: existing.patientId,
+      state: ConsultationState.ENDED,
+    });
+    await this.realtime.notifyQueueChanged('completed', id);
     return this.getOne(user, id);
   }
 
@@ -341,6 +365,15 @@ export class ConsultationsService {
       eventType: AUDIT_EVENTS.CONSULTATION_CANCELLED,
       consultationId: id,
     });
+    this.realtime.broadcastConsultationUpdated({
+      id,
+      patientId: existing.patientId,
+      state: ConsultationState.CANCELLED,
+    });
+    // Cancelling a queued case shifts everyone behind it.
+    if (existing.state === ConsultationState.QUEUED) {
+      await this.realtime.notifyQueueChanged('cancelled', id);
+    }
     return this.getOne(user, id);
   }
 
@@ -366,6 +399,8 @@ export class ConsultationsService {
       consultationId: id,
       metadata: { from: existing.priority, to: priority },
     });
+    // Re-prioritizing reorders the queue and every waiting patient's position.
+    await this.realtime.notifyQueueChanged('priority_changed', id);
     return { id: updated.id, state: updated.state, priority: updated.priority };
   }
 
@@ -410,6 +445,13 @@ export class ConsultationsService {
     priority: Priority;
     enqueuedAt: Date | null;
   }): Promise<number> {
+    // Fast path: the position cache (ADR-0004). PostgreSQL remains authoritative,
+    // so a miss (or no Redis) falls through to the exact count below.
+    const cached = await this.realtime.getCachedPosition(consultation.id);
+    if (cached !== null) {
+      return cached;
+    }
+
     const higherTiers = (Object.keys(PRIORITY_RANK) as Priority[]).filter(
       (p) => PRIORITY_RANK[p] > PRIORITY_RANK[consultation.priority],
     );

@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AuditModule } from '../audit/audit.module';
+import { RealtimeModule } from '../realtime/realtime.module';
 import { ConsultationsController } from './consultations.controller';
 import { ConsultationsService } from './consultations.service';
 
@@ -9,7 +10,7 @@ import { ConsultationsService } from './consultations.service';
  * can reuse consultation lookups where needed.
  */
 @Module({
-  imports: [AuditModule],
+  imports: [AuditModule, RealtimeModule],
   controllers: [ConsultationsController],
   providers: [ConsultationsService],
   exports: [ConsultationsService],

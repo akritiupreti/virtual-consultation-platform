@@ -5,6 +5,7 @@ import { AuditService } from '../audit/audit.service';
 import { Action } from '../common/authz/authorization-matrix';
 import { ActingUser, authorizeConsultationAction } from '../common/authz/policy';
 import { PrismaService } from '../prisma/prisma.service';
+import { RealtimeService } from '../realtime/realtime.service';
 import { SendMessageDto } from './dto/send-message.dto';
 
 export interface MessageView {
@@ -19,6 +20,7 @@ export class MessagingService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly realtime: RealtimeService,
   ) {}
 
   /** Send a persisted message. Participants only, and only while IN_SESSION. */
@@ -40,6 +42,19 @@ export class MessagingService {
       eventType: AUDIT_EVENTS.MESSAGE_SENT,
       consultationId,
       metadata: { senderRole: user.role },
+    });
+
+    // Push to the private consultation room. The room's members are exactly the
+    // participants the matrix allows to read messages (admins can never join), so
+    // emitting the body here stays within the authorization boundary (ADR-0009).
+    this.realtime.broadcastMessage({
+      consultationId,
+      message: {
+        id: message.id,
+        senderId: message.senderId,
+        body: message.body,
+        createdAt: message.createdAt.toISOString(),
+      },
     });
 
     return {

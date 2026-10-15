@@ -63,11 +63,26 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+      # Redis so the socket.io Redis adapter path is exercised in CI (ADR-0004/0009).
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
 
     env:
       DATABASE_URL: postgresql://vcp:vcp_dev_password@localhost:5432/vcp_test?schema=public
+      REDIS_URL: redis://localhost:6379
       JWT_SECRET: ci-only-test-secret
       JWT_EXPIRES_IN: 15m
+      # Drive the claim-TTL sweeper deterministically from the tests; keep the
+      # background tick out of the way so it never races the assertions.
+      CLAIM_START_TTL_SECONDS: '120'
+      CLAIM_TTL_SWEEP_INTERVAL_SECONDS: '3600'
 
     steps:
       - name: Checkout

@@ -1,6 +1,7 @@
 import { JSX, useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ApiError, api, Priority, QueueItem } from '../lib/api';
+import { useQueueUpdates } from '../lib/realtime';
 
 export default function TriageQueue(): JSX.Element {
   const navigate = useNavigate();
@@ -16,9 +17,12 @@ export default function TriageQueue(): JSX.Element {
     }
   }, []);
 
+  // Live updates via WebSocket (ADR-0009); the slow interval is only a fallback
+  // for when the socket is unavailable.
+  useQueueUpdates(refresh);
   useEffect(() => {
     void refresh();
-    const timer = setInterval(() => void refresh(), 3000);
+    const timer = setInterval(() => void refresh(), 15000);
     return () => clearInterval(timer);
   }, [refresh]);
 

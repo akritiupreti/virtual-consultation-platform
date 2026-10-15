@@ -1,6 +1,7 @@
 import { FormEvent, JSX, useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ApiError, api, MyConsultation, Priority } from '../lib/api';
+import { usePatientUpdates } from '../lib/realtime';
 
 const CATEGORIES = [
   'GENERAL',
@@ -37,9 +38,11 @@ export default function PatientHome(): JSX.Element {
     }
   }, []);
 
+  // Live position / state pushes (ADR-0009); slow interval is a fallback only.
+  usePatientUpdates(refresh);
   useEffect(() => {
     void refresh();
-    const timer = setInterval(() => void refresh(), 4000);
+    const timer = setInterval(() => void refresh(), 20000);
     return () => clearInterval(timer);
   }, [refresh]);
 

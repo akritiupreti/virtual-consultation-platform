@@ -40,17 +40,23 @@ flowchart TB
 These map directly to [success-criteria.md](success-criteria.md) and must always be
 covered regardless of the coverage percentage.
 
-| #    | Scenario                                                          | Where                                         | Proves                   |
-| ---- | ----------------------------------------------------------------- | --------------------------------------------- | ------------------------ |
-| CS-1 | Full lifecycle Requested → Summarized                             | `test/e2e/lifecycle.e2e-spec.ts`              | SC-1 / FR-17             |
-| CS-2 | Contested claim → exactly one winner                              | `test/e2e/claim-concurrency.e2e-spec.ts`      | SC-2 / FR-9 / ADR-0003   |
-| CS-3 | Invalid transitions rejected (409)                                | `transition-registry.spec.ts` + lifecycle e2e | SC-5 / FR-17             |
-| CS-4 | Admin cannot read clinical content                                | `test/e2e/rbac.e2e-spec.ts`                   | SC-6 / FR-16             |
-| CS-5 | No privilege escalation (role/ownership)                          | `authorization-matrix.spec.ts` + rbac e2e     | SC-7 / NFR-1             |
-| CS-6 | Doctor-only finalize; nurse denied                                | lifecycle + rbac e2e                          | FR-13                    |
-| CS-7 | Two subscribers see live queue/room updates                       | `test/e2e/realtime.e2e-spec.ts`               | FR-18 / C18 / ADR-0005   |
-| CS-8 | Claimed-but-not-started auto-requeues + audited                   | `test/e2e/claim-ttl-requeue.e2e-spec.ts`      | FR-12 / SC-4 / ADR-0010  |
-| CS-9 | WS connections authenticated; admin/non-participant refused rooms | `test/e2e/realtime.e2e-spec.ts`               | NFR-1 / invariants 3 & 4 |
+| #     | Scenario                                                              | Where                                                    | Proves                   |
+| ----- | --------------------------------------------------------------------- | -------------------------------------------------------- | ------------------------ |
+| CS-1  | Full lifecycle Requested → Summarized                                 | `test/e2e/lifecycle.e2e-spec.ts`                         | SC-1 / FR-17             |
+| CS-2  | Contested claim → exactly one winner                                  | `test/e2e/claim-concurrency.e2e-spec.ts`                 | SC-2 / FR-9 / ADR-0003   |
+| CS-3  | Invalid transitions rejected (409)                                    | `transition-registry.spec.ts` + lifecycle e2e            | SC-5 / FR-17             |
+| CS-4  | Admin cannot read clinical content                                    | `test/e2e/rbac.e2e-spec.ts`                              | SC-6 / FR-16             |
+| CS-5  | No privilege escalation (role/ownership)                              | `authorization-matrix.spec.ts` + rbac e2e                | SC-7 / NFR-1             |
+| CS-6  | Doctor-only finalize; nurse denied                                    | lifecycle + rbac e2e                                     | FR-13                    |
+| CS-7  | Two subscribers see live queue/room updates                           | `test/e2e/realtime.e2e-spec.ts`                          | FR-18 / C18 / ADR-0005   |
+| CS-8  | Claimed-but-not-started auto-requeues + audited                       | `test/e2e/claim-ttl-requeue.e2e-spec.ts`                 | FR-12 / SC-4 / ADR-0010  |
+| CS-9  | WS connections authenticated; admin/non-participant refused rooms     | `test/e2e/realtime.e2e-spec.ts`                          | NFR-1 / invariants 3 & 4 |
+| CS-10 | Admin cannot read attachments; attachment access is membership-scoped | `test/e2e/rbac.e2e-spec.ts` + `attachments.e2e-spec.ts`  | SC-6 / SC-8 / FR-16      |
+| CS-11 | Signed-URL scoping + expiry + tamper enforced                         | `signed-url.service.spec.ts` + `attachments.e2e-spec.ts` | SC-8 / NFR-2 / ADR-0007  |
+| CS-12 | Upload type/size validation (magic-byte, 415/413/409)                 | `test/e2e/attachments.e2e-spec.ts`                       | NFR-1 / ADR-0007         |
+| CS-13 | Full privilege-escalation matrix (role × state × ownership)           | `authorization-matrix.spec.ts` + `rbac.e2e-spec.ts`      | SC-7 / NFR-1             |
+| CS-14 | Deactivation: no login, token rejected, mid-session reassign, audited | `test/e2e/deactivation.e2e-spec.ts`                      | FR-23/24/25 / ADR-0012   |
+| CS-15 | Admin audit query filters + paginates + excludes clinical content     | `test/e2e/audit-query.e2e-spec.ts`                       | FR-15 / SC-6             |
 
 ### How the concurrency test proves correctness (CS-2)
 
@@ -81,6 +87,35 @@ clients**:
 These run on the single-instance in-memory adapter, so **Redis is not required** to
 prove them; cross-instance fan-out (the Redis adapter) is validated separately with
 Redis running (below).
+
+### How the security scenarios are proven (CS-10 … CS-15)
+
+- **Attachments (CS-10/11/12):** an `IN_SESSION` consultation is set up, then a
+  participant uploads a valid PNG; a disallowed/spoofed type is `415`, an over-size
+  file `413`, and over-count `409`. Listing returns a short-lived signed URL (with no
+  filename/PII), which downloads successfully; a tampered, missing, or
+  wrong-attachment token is `403`; an admin and a non-participant are denied list and
+  upload. Signed-URL **expiry + tamper + cross-secret** logic is proven
+  deterministically in the `signed-url.service.spec.ts` unit test (mocked clock)
+  rather than a slow e2e wait.
+- **Privilege escalation (CS-13):** the matrix unit test asserts every new cell
+  (attachments, addendum, user management) for each role, and the RBAC e2e asserts
+  the denials end-to-end (admin/non-participant/cross-patient), extending the Phase 2
+  matrix coverage to Phase 4 surfaces.
+- **Deactivation (CS-14):** a deactivated user cannot log in and their existing token
+  is rejected on the next request; a clinician deactivated mid-session has their case
+  returned to `QUEUED` (assignment cleared) with `USER_DEACTIVATED` +
+  `CONSULTATION_REASSIGNED` audited; self-deactivation is `400`; reactivation restores
+  login.
+- **Audit query (CS-15):** a full lifecycle is driven, then the admin query is
+  filtered by actor/event/consultation and paginated; a scan of the whole response
+  asserts no message body or summary text ever appears (SC-6); a non-admin is `403`.
+
+> **Rate limiting (ADR-0011)** is enforced in dev/prod but its limits are scaled far
+> up in the test environment so the concurrency/e2e suites (many requests from one
+> IP) are never throttled; the guard still runs. A deterministic 429 test is omitted
+> deliberately — it would be timing-dependent — and the limiter is a manual/config
+> check.
 
 ## Running the tests
 

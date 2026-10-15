@@ -114,6 +114,22 @@ describe('RBAC & separation of duties (e2e)', () => {
         .set('Authorization', bearer(adminToken))
         .expect(403));
 
+    it('is denied the attachments list (SC-8)', () =>
+      request(server)
+        .get(`/consultations/${consultationId}/attachments`)
+        .set('Authorization', bearer(adminToken))
+        .expect(403));
+
+    it('is denied uploading an attachment', () =>
+      request(server)
+        .post(`/consultations/${consultationId}/attachments`)
+        .set('Authorization', bearer(adminToken))
+        .attach('file', Buffer.from([0xff, 0xd8, 0xff, 0x00]), {
+          filename: 'x.jpg',
+          contentType: 'image/jpeg',
+        })
+        .expect(403));
+
     it('can read the audit log (its one legitimate view)', () =>
       request(server).get('/audit').set('Authorization', bearer(adminToken)).expect(200));
   });
@@ -157,6 +173,35 @@ describe('RBAC & separation of duties (e2e)', () => {
       await request(server)
         .post(`/consultations/${consultationId}/summary/finalize`)
         .set('Authorization', bearer(nurseToken))
+        .expect(403);
+    });
+
+    it("another patient cannot upload an attachment to patient A's consultation", () =>
+      request(server)
+        .post(`/consultations/${consultationId}/attachments`)
+        .set('Authorization', bearer(patientBToken))
+        .attach('file', Buffer.from([0xff, 0xd8, 0xff, 0x00]), {
+          filename: 'x.jpg',
+          contentType: 'image/jpeg',
+        })
+        .expect(403));
+
+    it('a non-assigned clinician cannot list the attachments', () =>
+      request(server)
+        .get(`/consultations/${consultationId}/attachments`)
+        .set('Authorization', bearer(otherNurseToken))
+        .expect(403));
+
+    it('a non-admin cannot list users (admin-only)', async () => {
+      await request(server).get('/users').set('Authorization', bearer(nurseToken)).expect(403);
+      await request(server).get('/users').set('Authorization', bearer(patientAToken)).expect(403);
+    });
+
+    it('a non-admin cannot deactivate a user (admin-only)', async () => {
+      const target = await prisma.user.findUniqueOrThrow({ where: { email: 'nurse@test.local' } });
+      await request(server)
+        .post(`/users/${target.id}/deactivate`)
+        .set('Authorization', bearer(patientAToken))
         .expect(403);
     });
 

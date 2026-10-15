@@ -7,6 +7,8 @@ import { AuthService } from '../src/auth/auth.service';
  */
 describe('AuthService', () => {
   const jwt = { sign: jest.fn().mockReturnValue('signed.jwt.token') };
+  // Login/registration emit security-relevant audit events; the mock just records calls.
+  const audit = { record: jest.fn().mockResolvedValue(undefined) };
   let prisma: {
     user: { findUnique: jest.Mock; create: jest.Mock };
   };
@@ -20,7 +22,8 @@ describe('AuthService', () => {
       },
     };
     jwt.sign.mockClear();
-    service = new AuthService(prisma as any, jwt as any);
+    audit.record.mockClear();
+    service = new AuthService(prisma as any, jwt as any, audit as any);
   });
 
   it('registers a new patient and returns an access token', async () => {
@@ -65,5 +68,28 @@ describe('AuthService', () => {
     await expect(
       service.login({ email: 'x@example.com', password: 'whatever12' }),
     ).rejects.toBeInstanceOf(UnauthorizedException);
+    // The failed attempt is audited with a reason code only — never the password.
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({ eventType: 'LOGIN_FAILURE', metadata: { reason: 'deactivated' } }),
+    );
+  });
+
+  it('audits a successful login', async () => {
+    prisma.user.findUnique.mockResolvedValue({
+      id: 'u1',
+      email: 'doc@example.com',
+      role: 'DOCTOR',
+      status: 'ACTIVE',
+      // bcrypt hash of 'password123' is irrelevant here — bcrypt.compare is real, so
+      // use a value it will reject? No: we need a real match. Stub compare instead.
+      passwordHash: await (await import('bcryptjs')).hash('password123', 4),
+    });
+
+    const result = await service.login({ email: 'doc@example.com', password: 'password123' });
+
+    expect(result.accessToken).toBe('signed.jwt.token');
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({ actorId: 'u1', eventType: 'LOGIN_SUCCESS' }),
+    );
   });
 });

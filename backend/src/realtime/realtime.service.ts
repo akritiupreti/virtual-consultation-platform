@@ -41,6 +41,16 @@ export class RealtimeService {
     this.server = server;
   }
 
+  /**
+   * Force every live socket of a user to disconnect — used when an account is
+   * deactivated so an already-issued JWT cannot keep a session open (FR-24/25).
+   * Targets the user's personal room, so it reaches the user across instances via
+   * the Redis adapter. A no-op when no socket server is attached.
+   */
+  disconnectUser(userId: string): void {
+    this.server?.in(userRoom(userId)).disconnectSockets(true);
+  }
+
   /** New message into the private consultation room (participants only). */
   broadcastMessage(payload: MessageCreatedPayload): void {
     this.server

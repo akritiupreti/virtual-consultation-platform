@@ -27,8 +27,10 @@ stateDiagram-v2
     QUEUED --> CANCELLED: patient cancels
     CLAIMED --> IN_SESSION: claiming clinician starts
     CLAIMED --> QUEUED: start TTL expires (auto-requeue)
+    CLAIMED --> QUEUED: clinician deactivated (reassign)
     CLAIMED --> CANCELLED: patient cancels (before start)
     IN_SESSION --> ENDED: claiming clinician completes
+    IN_SESSION --> QUEUED: clinician deactivated mid-session (reassign)
     ENDED --> SUMMARIZED: doctor finalizes summary
     SUMMARIZED --> [*]
     CANCELLED --> [*]
@@ -36,17 +38,19 @@ stateDiagram-v2
 
 ## Transition table (allowed)
 
-| From → To             | Actor              | Guard                                                                 |
-| --------------------- | ------------------ | --------------------------------------------------------------------- |
-| REQUESTED → QUEUED    | System             | Intake valid, consent granted, priority assigned                      |
-| REQUESTED → CANCELLED | Patient (owner)    | Before enqueue                                                        |
-| QUEUED → CLAIMED      | Nurse / Doctor     | `state=QUEUED AND claimed_by IS NULL` (atomic); actor under claim cap |
-| QUEUED → CANCELLED    | Patient (owner)    | Not yet claimed                                                       |
-| CLAIMED → IN_SESSION  | Claiming clinician | `actor = claimed_by`; within start TTL                                |
-| CLAIMED → QUEUED      | System             | Start TTL expired; clears `claimed_by`; audited                       |
-| CLAIMED → CANCELLED   | Patient (owner)    | Before session starts                                                 |
-| IN_SESSION → ENDED    | Claiming clinician | `actor = claimed_by`                                                  |
-| ENDED → SUMMARIZED    | Doctor             | `role = DOCTOR`; summary finalized                                    |
+| From → To             | Actor              | Guard                                                                               |
+| --------------------- | ------------------ | ----------------------------------------------------------------------------------- |
+| REQUESTED → QUEUED    | System             | Intake valid, consent granted, priority assigned                                    |
+| REQUESTED → CANCELLED | Patient (owner)    | Before enqueue                                                                      |
+| QUEUED → CLAIMED      | Nurse / Doctor     | `state=QUEUED AND claimed_by IS NULL` (atomic); actor under claim cap               |
+| QUEUED → CANCELLED    | Patient (owner)    | Not yet claimed                                                                     |
+| CLAIMED → IN_SESSION  | Claiming clinician | `actor = claimed_by`; within start TTL                                              |
+| CLAIMED → QUEUED      | System             | Start TTL expired; clears `claimed_by`; audited (`REQUEUE`)                         |
+| CLAIMED → QUEUED      | System             | Assigned clinician deactivated; clears `claimed_by`; audited (`REASSIGN`)           |
+| CLAIMED → CANCELLED   | Patient (owner)    | Before session starts                                                               |
+| IN_SESSION → ENDED    | Claiming clinician | `actor = claimed_by`                                                                |
+| IN_SESSION → QUEUED   | System             | Assigned clinician deactivated mid-session; clears assignment; audited (`REASSIGN`) |
+| ENDED → SUMMARIZED    | Doctor             | `role = DOCTOR`; summary finalized                                                  |
 
 ## Invalid transitions (explicitly rejected)
 
@@ -66,8 +70,14 @@ stateDiagram-v2
   auto-requeued (`CLAIMED → QUEUED`), `claimed_by` cleared, event audited, queue
   subscribers notified. Implemented in Phase 3 by a DB-authoritative sweeper
   ([ADR-0010](adr/0010-claim-start-ttl.md)) and audited as `CONSULTATION_REQUEUED`.
-- **Clinician deactivated mid-session:** `IN_SESSION` is paused and the case
-  requeued/reassigned; the patient is notified (see [requirements.md](requirements.md) FR-24).
+- **Clinician deactivated mid-session:** a `CLAIMED` or `IN_SESSION` case held by
+  the deactivated clinician is paused and returned to the queue via the `REASSIGN`
+  system transition (→ `QUEUED`, clears `claimed_by`/`started_at`, keeps the
+  original `enqueued_at` so the patient keeps their place), audited as
+  `CONSULTATION_REASSIGNED`, and the patient is notified via the real-time fan-out
+  (FR-24; [ADR-0012](adr/0012-mid-session-reassignment.md)). Implemented in Phase 4
+  by the account-deactivation lifecycle, reusing the atomic conditional-update
+  pattern of the claim/TTL sweeper.
 - **Connection loss in session:** the state is unchanged server-side; clients
   reconcile on reconnect from the server's authoritative state.
 

@@ -31,19 +31,73 @@ export class AuditService {
     });
   }
 
-  /** Admin-only read of the audit trail (most recent first). */
-  async list(limit = 200): Promise<Array<Record<string, unknown>>> {
-    const rows = await this.prisma.auditLog.findMany({
-      orderBy: { createdAt: 'desc' },
-      take: Math.min(limit, 500),
-    });
-    return rows.map((row) => ({
-      id: row.id,
-      actorId: row.actorId,
-      eventType: row.eventType,
-      consultationId: row.consultationId,
-      metadata: row.metadata,
-      createdAt: row.createdAt,
-    }));
+  /**
+   * Admin-only, filterable, paginated read of the audit trail (FR-15, most recent
+   * first). Filters compose (actor AND event type AND consultation AND time range).
+   * The projection is who/what/when only — it never joins to or returns message
+   * bodies, attachment contents, or summary text (invariant 3; SC-6).
+   */
+  async query(filters: AuditQuery = {}): Promise<AuditPage> {
+    const limit = clamp(filters.limit ?? 50, 1, 200);
+    const offset = Math.max(0, filters.offset ?? 0);
+
+    const where: Prisma.AuditLogWhereInput = {};
+    if (filters.actorId) {
+      where.actorId = filters.actorId;
+    }
+    if (filters.eventType) {
+      where.eventType = filters.eventType;
+    }
+    if (filters.consultationId) {
+      where.consultationId = filters.consultationId;
+    }
+    if (filters.from || filters.to) {
+      where.createdAt = {
+        ...(filters.from ? { gte: new Date(filters.from) } : {}),
+        ...(filters.to ? { lte: new Date(filters.to) } : {}),
+      };
+    }
+
+    const [total, rows] = await this.prisma.$transaction([
+      this.prisma.auditLog.count({ where }),
+      this.prisma.auditLog.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: offset,
+        take: limit,
+        // Explicit projection: who / what / when only — no clinical content.
+        select: {
+          id: true,
+          actorId: true,
+          eventType: true,
+          consultationId: true,
+          metadata: true,
+          createdAt: true,
+        },
+      }),
+    ]);
+
+    return { items: rows, total, limit, offset };
   }
+}
+
+export interface AuditQuery {
+  actorId?: string;
+  eventType?: string;
+  consultationId?: string;
+  from?: string;
+  to?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface AuditPage {
+  items: Array<Record<string, unknown>>;
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
 }

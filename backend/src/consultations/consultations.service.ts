@@ -12,6 +12,7 @@ import {
 } from '../common/errors/domain-exceptions';
 import { PrismaService } from '../prisma/prisma.service';
 import { RealtimeService } from '../realtime/realtime.service';
+import { REASSIGN, transitionFor } from '../common/state-machine/transitions';
 import { SubmitRequestDto } from './dto/submit-request.dto';
 
 /** Serving order within the queue (higher rank is served first). */
@@ -402,6 +403,64 @@ export class ConsultationsService {
     // Re-prioritizing reorders the queue and every waiting patient's position.
     await this.realtime.notifyQueueChanged('priority_changed', id);
     return { id: updated.id, state: updated.state, priority: updated.priority };
+  }
+
+  /**
+   * Reassign every active case (CLAIMED or IN_SESSION) of a clinician back to the
+   * queue — used when that clinician is deactivated mid-session (FR-24, ADR-0012).
+   * Each reassignment is an atomic conditional UPDATE (the same race-safe pattern
+   * as claim/requeue), audited as CONSULTATION_REASSIGNED (system actor, who/what/
+   * when only), and fanned out: the patient's status view and the queue both
+   * reconcile live. The case keeps its original enqueue time, so the patient does
+   * not lose their place in line. Returns the ids reassigned.
+   */
+  async reassignActiveCasesOf(clinicianId: string, reason: string): Promise<string[]> {
+    const transition = transitionFor(REASSIGN)!;
+
+    const active = await this.prisma.consultation.findMany({
+      where: { claimedBy: clinicianId, state: { in: transition.from } },
+      select: { id: true, patientId: true },
+    });
+
+    const reassigned: Array<{ id: string; patientId: string }> = [];
+    for (const consultation of active) {
+      const result = await this.prisma.consultation.updateMany({
+        where: { id: consultation.id, claimedBy: clinicianId, state: { in: transition.from } },
+        data: {
+          state: transition.to,
+          claimedBy: null,
+          claimedAt: null,
+          startedAt: null,
+          version: { increment: 1 },
+        },
+      });
+      if (result.count !== 1) {
+        // The case moved under us (e.g. the clinician completed it just now).
+        continue;
+      }
+      reassigned.push(consultation);
+
+      await this.audit.record({
+        actorId: null,
+        eventType: AUDIT_EVENTS.CONSULTATION_REASSIGNED,
+        consultationId: consultation.id,
+        metadata: { reason, previousClaimedBy: clinicianId },
+      });
+    }
+
+    // Fan-out after each write commits; patients and the queue reconcile from the
+    // authoritative DB state (the same pattern as the claim-TTL sweeper, ADR-0004).
+    for (const consultation of reassigned) {
+      this.realtime.broadcastConsultationUpdated({
+        id: consultation.id,
+        patientId: consultation.patientId,
+        state: transition.to,
+      });
+    }
+    if (reassigned.length > 0) {
+      await this.realtime.notifyQueueChanged('reassigned');
+    }
+    return reassigned.map((c) => c.id);
   }
 
   // ── internals ──────────────────────────────────────────────────────────────

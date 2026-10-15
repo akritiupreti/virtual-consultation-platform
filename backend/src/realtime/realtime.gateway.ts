@@ -8,7 +8,7 @@ import {
   WebSocketGateway,
   WebSocketServer,
 } from '@nestjs/websockets';
-import { Role } from '@prisma/client';
+import { Role, UserStatus } from '@prisma/client';
 import type { Server, Socket } from 'socket.io';
 import { Action } from '../common/authz/authorization-matrix';
 import { ActingUser, authorizeConsultationAction } from '../common/authz/policy';
@@ -57,17 +57,44 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
   afterInit(server: Server): void {
     // Give the publisher a handle to the socket server for fan-out.
     this.realtime.setServer(server);
+
+    // Authenticate + authorize in a handshake middleware. It runs to completion
+    // BEFORE the connection is accepted and before any client event is processed,
+    // so there is no window in which a socket can act before it is verified. A
+    // rejected handshake surfaces to the client as a connect_error.
+    server.use((socket: Socket, next: (err?: Error) => void) => {
+      void this.authorizeHandshake(socket, next);
+    });
   }
 
-  /** Authenticate on connect; reject (disconnect) an unauthenticated socket. */
-  async handleConnection(client: Socket): Promise<void> {
-    const user = this.authenticate(client);
+  private async authorizeHandshake(socket: Socket, next: (err?: Error) => void): Promise<void> {
+    const user = this.authenticate(socket);
     if (!user) {
-      client.emit('exception', { ok: false, error: 'unauthorized' } satisfies SubscriptionAck);
+      next(new Error('unauthorized'));
+      return;
+    }
+    // A token issued before deactivation must not open a live session (FR-25): the
+    // account's current status is checked against the DB, exactly as REST does.
+    const account = await this.prisma.user.findUnique({
+      where: { id: user.id },
+      select: { status: true },
+    });
+    if (!account || account.status !== UserStatus.ACTIVE) {
+      next(new Error('unauthorized'));
+      return;
+    }
+    socket.data.user = user;
+    next();
+  }
+
+  /** The handshake middleware already authenticated the socket (data.user is set). */
+  async handleConnection(client: Socket): Promise<void> {
+    const user = client.data.user as ActingUser | undefined;
+    if (!user) {
+      // Defensive: should not happen since the middleware gates the handshake.
       client.disconnect(true);
       return;
     }
-    client.data.user = user;
     // Every user joins their personal room for position/state updates.
     await client.join(userRoom(user.id));
     await this.presence.markConnected(user.id);

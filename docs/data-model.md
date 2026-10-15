@@ -104,8 +104,13 @@ erDiagram
   in Redis for fast reads, but Postgres remains authoritative.
 - **Summary immutability:** a finalized `SUMMARY` is never edited; corrections are
   appended as `ADDENDUM` rows, preserving an auditable record.
+- **Attachments** store an **opaque `storage_key`** (a server-generated UUID naming
+  the file in the local object store), never the client filename, and never the bytes
+  in the DB. Access is only via short-lived, user-scoped signed URLs that re-run the
+  authorization matrix ([ADR-0007](adr/0007-attachment-storage.md)); the signed URL
+  is computed, not persisted.
 - **Audit log excludes clinical content:** `metadata` records who/what/when, never
-  message bodies, attachment contents, or summary text.
+  message bodies, attachment contents/filenames, or summary text.
 - **Soft deactivation:** `USER.status = DEACTIVATED` (never a hard delete) so
   history and references remain intact.
 

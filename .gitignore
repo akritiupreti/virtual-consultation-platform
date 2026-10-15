@@ -19,6 +19,10 @@ coverage/
 .next/
 out/
 
+# Local attachment object store (ADR-0007) — never commit uploaded files
+var/
+backend/var/
+
 # Environment / secrets
 .env
 .env.*

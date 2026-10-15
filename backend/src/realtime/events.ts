@@ -43,6 +43,7 @@ export type QueueChangeReason =
   | 'priority_changed'
   | 'claimed'
   | 'requeued'
+  | 'reassigned'
   | 'completed'
   | 'cancelled'
   | 'state_changed';

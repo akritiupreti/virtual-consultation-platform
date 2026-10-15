@@ -3,6 +3,8 @@ import { Action } from '../src/common/authz/authorization-matrix';
 import {
   ENQUEUE,
   isTransitionAllowed,
+  REASSIGN,
+  REQUEUE,
   TERMINAL_STATES,
   transitionFor,
   TransitionTrigger,
@@ -36,6 +38,21 @@ describe('transition registry', () => {
         expect(isTransitionAllowed(Action.CANCEL_REQUEST, from)).toBe(true);
       }
     });
+
+    it('REQUEUE (start-TTL) moves CLAIMED → QUEUED', () => {
+      expect(transitionFor(REQUEUE)).toMatchObject({ from: [S.CLAIMED], to: S.QUEUED });
+    });
+
+    it('REASSIGN (mid-session deactivation) moves CLAIMED or IN_SESSION → QUEUED', () => {
+      const transition = transitionFor(REASSIGN);
+      expect(transition?.to).toBe(S.QUEUED);
+      expect(transition?.from).toEqual(expect.arrayContaining([S.CLAIMED, S.IN_SESSION]));
+      expect(isTransitionAllowed(REASSIGN, S.IN_SESSION)).toBe(true);
+      expect(isTransitionAllowed(REASSIGN, S.CLAIMED)).toBe(true);
+      // Not from a state where there is nothing to reassign.
+      expect(isTransitionAllowed(REASSIGN, S.QUEUED)).toBe(false);
+      expect(isTransitionAllowed(REASSIGN, S.ENDED)).toBe(false);
+    });
   });
 
   describe('explicitly rejected transitions (docs/state-machine.md)', () => {
@@ -64,6 +81,8 @@ describe('transition registry', () => {
         Action.FINALIZE_SUMMARY,
         Action.CANCEL_REQUEST,
         ENQUEUE,
+        REQUEUE,
+        REASSIGN,
       ];
       for (const terminal of TERMINAL_STATES) {
         for (const trigger of triggers) {

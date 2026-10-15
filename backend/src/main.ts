@@ -1,13 +1,22 @@
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import { json, urlencoded } from 'express';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { RedisIoAdapter } from './realtime/redis-io.adapter';
 
 async function bootstrap(): Promise<void> {
-  const app = await NestFactory.create(AppModule);
+  // Disable the default body parser so we can impose explicit size caps below.
+  const app = await NestFactory.create(AppModule, { bodyParser: false });
 
   app.use(helmet());
+
+  // Cap JSON/urlencoded payloads (input-validation hardening, NFR-1). File uploads
+  // are multipart and handled by multer in the AttachmentsModule with their own
+  // size limit, so they are unaffected by this JSON cap.
+  const bodyLimit = process.env.JSON_BODY_LIMIT ?? '100kb';
+  app.use(json({ limit: bodyLimit }));
+  app.use(urlencoded({ extended: true, limit: bodyLimit }));
   // Allow the Vite dev frontend (configurable, comma-separated) to call the API.
   const corsOrigin = process.env.CORS_ORIGIN?.split(',').map((o) => o.trim()) ?? [
     'http://localhost:5173',

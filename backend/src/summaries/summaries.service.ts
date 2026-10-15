@@ -7,7 +7,15 @@ import { ActingUser, authorizeConsultationAction } from '../common/authz/policy'
 import { SummaryFinalizedException } from '../common/errors/domain-exceptions';
 import { PrismaService } from '../prisma/prisma.service';
 import { RealtimeService } from '../realtime/realtime.service';
+import { AddAddendumDto } from './dto/add-addendum.dto';
 import { DraftSummaryDto } from './dto/draft-summary.dto';
+
+export interface AddendumView {
+  id: string;
+  authorId: string;
+  content: string;
+  createdAt: Date;
+}
 
 export interface SummaryView {
   consultationId: string;
@@ -16,6 +24,8 @@ export interface SummaryView {
   finalizedBy: string | null;
   finalizedAt: Date | null;
   finalized: boolean;
+  /** Append-only corrections, oldest first (FR-13, C5). */
+  addenda: AddendumView[];
 }
 
 const DRAFTABLE_STATES: ConsultationState[] = [
@@ -115,17 +125,61 @@ export class SummariesService {
   /**
    * View the summary. Assigned clinician sees drafts; the patient owner sees it
    * only once finalized (FR-6). Admins are denied by the authorization matrix.
+   * Finalized summaries include their append-only addenda (FR-13).
    */
   async get(user: ActingUser, consultationId: string): Promise<SummaryView> {
     const consultation = await this.loadConsultationOr404(consultationId);
     authorizeConsultationAction(user, consultation, Action.VIEW_SUMMARY);
 
-    const summary = await this.prisma.summary.findUnique({ where: { consultationId } });
+    const summary = await this.prisma.summary.findUnique({
+      where: { consultationId },
+      include: { addenda: { orderBy: { createdAt: 'asc' } } },
+    });
     // Hide a draft (and even its existence) from the patient until it is finalized.
     if (!summary || (user.role === Role.PATIENT && !summary.finalizedAt)) {
       throw new NotFoundException('Summary not available');
     }
-    return this.toView(summary);
+    return this.toView(summary, summary.addenda);
+  }
+
+  /**
+   * Append a correction to a FINALIZED summary (FR-13, C5). The summary itself is
+   * never mutated — corrections are append-only addendums, preserving an auditable
+   * record. Clinicians only (matrix: ADD_ADDENDUM); admins are denied. Audited as
+   * SUMMARY_ADDENDUM_ADDED (who/what/when only — never the addendum text).
+   */
+  async addAddendum(
+    user: ActingUser,
+    consultationId: string,
+    dto: AddAddendumDto,
+  ): Promise<SummaryView> {
+    const consultation = await this.loadConsultationOr404(consultationId);
+    authorizeConsultationAction(user, consultation, Action.ADD_ADDENDUM);
+
+    if (consultation.state !== ConsultationState.SUMMARIZED) {
+      throw new ConflictException('Addendums can only be added to a finalized summary');
+    }
+
+    const summary = await this.prisma.summary.findUnique({ where: { consultationId } });
+    if (!summary || !summary.finalizedAt) {
+      throw new ConflictException('There is no finalized summary to amend');
+    }
+
+    await this.prisma.addendum.create({
+      data: { summaryId: summary.id, authorId: user.id, content: dto.content },
+    });
+    await this.audit.record({
+      actorId: user.id,
+      eventType: AUDIT_EVENTS.SUMMARY_ADDENDUM_ADDED,
+      consultationId,
+      metadata: { summaryId: summary.id },
+    });
+
+    const addenda = await this.prisma.addendum.findMany({
+      where: { summaryId: summary.id },
+      orderBy: { createdAt: 'asc' },
+    });
+    return this.toView(summary, addenda);
   }
 
   private async loadConsultationOr404(
@@ -141,13 +195,16 @@ export class SummariesService {
     return consultation;
   }
 
-  private toView(summary: {
-    consultationId: string;
-    content: string;
-    draftedBy: string;
-    finalizedBy: string | null;
-    finalizedAt: Date | null;
-  }): SummaryView {
+  private toView(
+    summary: {
+      consultationId: string;
+      content: string;
+      draftedBy: string;
+      finalizedBy: string | null;
+      finalizedAt: Date | null;
+    },
+    addenda: AddendumView[] = [],
+  ): SummaryView {
     return {
       consultationId: summary.consultationId,
       content: summary.content,
@@ -155,6 +212,12 @@ export class SummariesService {
       finalizedBy: summary.finalizedBy,
       finalizedAt: summary.finalizedAt,
       finalized: summary.finalizedAt != null,
+      addenda: addenda.map((a) => ({
+        id: a.id,
+        authorId: a.authorId,
+        content: a.content,
+        createdAt: a.createdAt,
+      })),
     };
   }
 }

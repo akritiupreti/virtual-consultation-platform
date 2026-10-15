@@ -1,14 +1,16 @@
-import { Controller, DefaultValuePipe, Get, ParseIntPipe, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { Role } from '@prisma/client';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Roles } from '../common/authz/roles.decorator';
 import { RolesGuard } from '../common/authz/roles.guard';
-import { AuditService } from './audit.service';
+import { AuditPage, AuditService } from './audit.service';
+import { AuditQueryDto } from './dto/audit-query.dto';
 
 /**
  * Audit log is admin-only (FR-15). It deliberately exposes no clinical content —
  * separation of duties (invariant 3): admins operate the system but cannot read
- * messages, attachments, or summaries.
+ * messages, attachments, or summaries. Supports filtering by actor, event type,
+ * consultation, and time range, with pagination.
  */
 @Controller('audit')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -17,9 +19,7 @@ export class AuditController {
   constructor(private readonly audit: AuditService) {}
 
   @Get()
-  list(
-    @Query('limit', new DefaultValuePipe(200), ParseIntPipe) limit: number,
-  ): Promise<Array<Record<string, unknown>>> {
-    return this.audit.list(limit);
+  list(@Query() query: AuditQueryDto): Promise<AuditPage> {
+    return this.audit.query(query);
   }
 }

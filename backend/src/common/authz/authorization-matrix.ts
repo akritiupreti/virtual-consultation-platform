@@ -24,10 +24,14 @@ export enum Action {
   END_CONSULTATION = 'END_CONSULTATION',
   SEND_MESSAGE = 'SEND_MESSAGE',
   READ_MESSAGES = 'READ_MESSAGES',
+  UPLOAD_ATTACHMENT = 'UPLOAD_ATTACHMENT',
+  VIEW_ATTACHMENT = 'VIEW_ATTACHMENT',
   DRAFT_SUMMARY = 'DRAFT_SUMMARY',
   FINALIZE_SUMMARY = 'FINALIZE_SUMMARY',
+  ADD_ADDENDUM = 'ADD_ADDENDUM',
   VIEW_SUMMARY = 'VIEW_SUMMARY',
   VIEW_AUDIT_LOG = 'VIEW_AUDIT_LOG',
+  MANAGE_USERS = 'MANAGE_USERS',
 }
 
 /** Ownership / participation guard required in addition to the role check. */
@@ -76,6 +80,18 @@ export const AUTHORIZATION_MATRIX: Record<Action, Permission> = {
     roles: [Role.PATIENT, Role.NURSE, Role.DOCTOR],
     ownership: Ownership.PARTICIPANT,
   },
+  // Attachments are clinical content: participants only, never admin (deny by
+  // omission). Upload is additionally gated to IN_SESSION in the service, like
+  // messaging; download is allowed in and after a session so both parties can
+  // review it, and is served only via a short-lived, user-scoped signed URL (C4).
+  [Action.UPLOAD_ATTACHMENT]: {
+    roles: [Role.PATIENT, Role.NURSE, Role.DOCTOR],
+    ownership: Ownership.PARTICIPANT,
+  },
+  [Action.VIEW_ATTACHMENT]: {
+    roles: [Role.PATIENT, Role.NURSE, Role.DOCTOR],
+    ownership: Ownership.PARTICIPANT,
+  },
   [Action.DRAFT_SUMMARY]: {
     roles: [Role.NURSE, Role.DOCTOR],
     ownership: Ownership.ASSIGNED_CLINICIAN,
@@ -83,11 +99,18 @@ export const AUTHORIZATION_MATRIX: Record<Action, Permission> = {
   // Finalize is doctor-only and keyed to state=ENDED (transition registry). It is
   // NOT tied to the assigned clinician, so a doctor can finalize a case a nurse ran.
   [Action.FINALIZE_SUMMARY]: { roles: [Role.DOCTOR], ownership: Ownership.NONE },
+  // Append-only correction to a finalized (immutable) summary. Clinicians only;
+  // the service gates it to state=SUMMARIZED (FR-13, C5). Never admin.
+  [Action.ADD_ADDENDUM]: { roles: [Role.NURSE, Role.DOCTOR], ownership: Ownership.NONE },
   [Action.VIEW_SUMMARY]: {
     roles: [Role.PATIENT, Role.NURSE, Role.DOCTOR],
     ownership: Ownership.PARTICIPANT,
   },
   [Action.VIEW_AUDIT_LOG]: { roles: [Role.ADMIN], ownership: Ownership.NONE },
+  // User management is admin-only and not consultation-scoped (no ownership); it
+  // is enforced by the controller's role gate. Listed here so the matrix remains
+  // the single source of truth. Admins manage users but never read clinical content.
+  [Action.MANAGE_USERS]: { roles: [Role.ADMIN], ownership: Ownership.NONE },
 };
 
 /** Coarse role check. Deny-by-default for any unknown action. */

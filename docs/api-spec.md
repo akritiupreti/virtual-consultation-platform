@@ -18,13 +18,16 @@ Authorization for every endpoint _and every WebSocket room_ derives from the sin
 
 ### Error model
 
-| Status             | Meaning in this API                                                           |
-| ------------------ | ----------------------------------------------------------------------------- |
-| `400 Bad Request`  | Validation failure (missing/extra field, bad enum, consent not granted)       |
-| `401 Unauthorized` | Missing/invalid/expired token                                                 |
-| `403 Forbidden`    | Role or ownership not permitted (authorization matrix)                        |
-| `404 Not Found`    | Consultation/summary does not exist (or hidden from a non-participant)        |
-| `409 Conflict`     | Illegal state transition, lost claim race, or active-consultation cap reached |
+| Status                       | Meaning in this API                                                                                |
+| ---------------------------- | -------------------------------------------------------------------------------------------------- |
+| `400 Bad Request`            | Validation failure (missing/extra field, bad enum, consent not granted, missing file)              |
+| `401 Unauthorized`           | Missing/invalid/expired token, or the account is not active                                        |
+| `403 Forbidden`              | Role or ownership not permitted (authorization matrix); invalid/expired signed URL                 |
+| `404 Not Found`              | Consultation/summary/user does not exist (or hidden from a non-participant)                        |
+| `409 Conflict`               | Illegal state transition, lost claim race, active-consultation cap, or attachment count reached    |
+| `413 Payload Too Large`      | Request body or uploaded file exceeds the configured size cap                                      |
+| `415 Unsupported Media Type` | Upload is not an allowed JPEG/PNG/PDF (checked by magic bytes, not just the declared type)         |
+| `429 Too Many Requests`      | Rate limit exceeded (auth and upload endpoints are limited; [ADR-0011](adr/0011-rate-limiting.md)) |
 
 Error bodies follow Nest's shape: `{ "statusCode", "message", "error" }` where
 `message` may be a string or an array of validation messages.
@@ -69,25 +72,77 @@ identity or attachments (data minimization, FR-7/C7).
 | `POST /consultations/:id/messages` | P,N,D | participant · `state=IN_SESSION` | `{ body }` (1–4000) | `201` message        |
 | `GET /consultations/:id/messages`  | P,N,D | participant                      | —                   | `200` messages (asc) |
 
+## Attachments (clinical content — admin denied)
+
+Attachments are stored in a local object store and reached only via short-lived,
+user-scoped **signed URLs** that still pass the authorization matrix on every fetch
+([ADR-0007](adr/0007-attachment-storage.md)). Admins are denied (separation of
+duties). Allowed types: **JPEG/PNG/PDF** (validated by magic bytes), ≤ 10 MB/file,
+with a per-consultation count cap.
+
+| Method & path                          | Roles | Guard                                                                                  | Body                               | Success                                           |
+| -------------------------------------- | ----- | -------------------------------------------------------------------------------------- | ---------------------------------- | ------------------------------------------------- |
+| `POST /consultations/:id/attachments`  | P,N,D | participant · `state=IN_SESSION`                                                       | `multipart/form-data` field `file` | `201` attachment metadata                         |
+| `GET /consultations/:id/attachments`   | P,N,D | participant                                                                            | —                                  | `200` list + per-item `downloadUrl` + `expiresAt` |
+| `GET /attachments/:id/download?token=` | —     | **signed token** (user-scoped, short-lived); re-runs the matrix + active-account check | —                                  | `200` file stream (`inline`)                      |
+
+- The upload is rate-limited ([ADR-0011](adr/0011-rate-limiting.md)); a wrong/spoofed
+  type is `415`, an over-size file `413`, and exceeding the per-consultation count
+  `409`.
+- The download route is authorized by the **token itself** (so it works as a plain
+  URL), not a bearer JWT: the token binds `{attachmentId, userId, exp}`, carries no
+  PII/clinical data, and the handler re-loads the user, confirms the account is
+  active, and re-runs the matrix — an admin or non-participant is refused even with a
+  valid link; a tampered/expired/mismatched token is `403`.
+
 ## Summary (clinical content — admin denied)
 
 | Method & path                              | Roles | Guard                                                 | Body                   | Success                      |
 | ------------------------------------------ | ----- | ----------------------------------------------------- | ---------------------- | ---------------------------- |
 | `POST /consultations/:id/summary`          | N,D   | assigned · `state∈{IN_SESSION,ENDED}` · not finalized | `{ content }` (1–8000) | `201` draft                  |
 | `POST /consultations/:id/summary/finalize` | D     | `state=ENDED`                                         | —                      | `200` finalized → SUMMARIZED |
-| `GET /consultations/:id/summary`           | P,N,D | participant; patient only when finalized              | —                      | `200` summary                |
+| `POST /consultations/:id/summary/addendum` | N,D   | clinician · `state=SUMMARIZED`                        | `{ content }` (1–8000) | `201` summary + addenda      |
+| `GET /consultations/:id/summary`           | P,N,D | participant; patient only when finalized              | —                      | `200` summary + addenda      |
 
-A finalized summary is **immutable**; corrections become append-only addendums
-(Phase 4). Attempting to re-draft a finalized summary returns `409`.
+A finalized summary is **immutable**; corrections are **append-only addendums**
+(FR-13, C5) — the summary content itself is never mutated. Attempting to re-draft a
+finalized summary returns `409`, as does an addendum before finalize. The summary
+view includes an `addenda` array (oldest first).
+
+## Users (admin only)
+
+Admin user management and the account-deactivation lifecycle (FR-14, FR-23/24/25).
+Admin-only (matrix `MANAGE_USERS`); nothing here exposes clinical content.
+
+| Method & path                | Roles | Guard    | Success                                             |
+| ---------------------------- | ----- | -------- | --------------------------------------------------- |
+| `GET /users`                 | A     | —        | `200` accounts (id, email, role, status, createdAt) |
+| `POST /users/:id/deactivate` | A     | not self | `200` user + `reassignedConsultationIds`            |
+| `POST /users/:id/reactivate` | A     | —        | `200` user                                          |
+
+- Deactivation is a **soft** state change (never a delete). A deactivated user cannot
+  log in, any already-issued token is rejected on the next request (status re-checked
+  from the DB), and their live sockets are dropped.
+- Deactivating a **clinician mid-session** reassigns each of their `CLAIMED`/
+  `IN_SESSION` cases back to the queue (`CONSULTATION_REASSIGNED`) and notifies the
+  patient via real-time fan-out ([ADR-0012](adr/0012-mid-session-reassignment.md)).
+- An admin cannot deactivate **their own** account (`400`); deactivating an already-
+  deactivated user (or reactivating an active one) is `409`.
+
+<a id="audit-admin-only"></a>
 
 ## Audit (admin only)
 
-| Method & path        | Roles | Body | Success                                    |
-| -------------------- | ----- | ---- | ------------------------------------------ |
-| `GET /audit?limit=N` | A     | —    | `200` recent events (default 200, max 500) |
+Filterable and paginated (FR-15). Filters compose (AND). Unknown query params are
+rejected (`400`).
+
+| Method & path | Roles | Query params                                                                                            | Success                                                   |
+| ------------- | ----- | ------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| `GET /audit`  | A     | `actorId`, `eventType`, `consultationId`, `from`, `to` (ISO-8601), `limit` (≤200, default 50), `offset` | `200 { items, total, limit, offset }` (most recent first) |
 
 Audit records carry **who / what / when** only — never message bodies, attachment
-contents, or summary text (invariants 5 & 6).
+contents/filenames, or summary text (invariants 5 & 6). The full catalogue and log
+schema are in [audit-logging.md](audit-logging.md).
 
 ### Audit event catalogue (Phase 2 subset)
 

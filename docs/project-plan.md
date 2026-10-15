@@ -201,10 +201,12 @@ clean and green.
 - ADR-0004 — Redis responsibilities (and non-responsibilities)
 - ADR-0005 — Real-time transport (WebSockets) & fan-out
 - ADR-0006 — AuthN/AuthZ approach (sessions/JWT + role+state matrix)
-- ADR-0007 — Attachment storage & signed-URL access
+- ADR-0007 — Attachment storage & signed-URL access ✅
 - ADR-0008 — Deployment target (local Docker Compose) ✅
 - ADR-0009 — Real-time implementation (socket.io + Redis adapter) ✅
 - ADR-0010 — Claim-start TTL via a DB-authoritative sweeper ✅
+- ADR-0011 — Application-level rate limiting ✅
+- ADR-0012 — Mid-session reassignment on clinician deactivation ✅
 
 ---
 

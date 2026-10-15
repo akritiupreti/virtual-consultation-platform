@@ -11,8 +11,11 @@ const CLINICAL_ACTIONS = [
   Action.VIEW_CONSULTATION,
   Action.SEND_MESSAGE,
   Action.READ_MESSAGES,
+  Action.UPLOAD_ATTACHMENT,
+  Action.VIEW_ATTACHMENT,
   Action.DRAFT_SUMMARY,
   Action.FINALIZE_SUMMARY,
+  Action.ADD_ADDENDUM,
   Action.VIEW_SUMMARY,
 ];
 
@@ -48,6 +51,29 @@ describe('authorization matrix (role dimension)', () => {
     for (const role of [Role.PATIENT, Role.NURSE, Role.DOCTOR]) {
       expect(can(Action.VIEW_AUDIT_LOG, role)).toBe(false);
     }
+  });
+
+  it('only an admin may manage users; no clinician/patient escalation (SC-7)', () => {
+    expect(can(Action.MANAGE_USERS, Role.ADMIN)).toBe(true);
+    for (const role of [Role.PATIENT, Role.NURSE, Role.DOCTOR]) {
+      expect(can(Action.MANAGE_USERS, role)).toBe(false);
+    }
+  });
+
+  it('attachments are participant-clinical: patients + clinicians, never admin', () => {
+    for (const action of [Action.UPLOAD_ATTACHMENT, Action.VIEW_ATTACHMENT]) {
+      expect(can(action, Role.PATIENT)).toBe(true);
+      expect(can(action, Role.NURSE)).toBe(true);
+      expect(can(action, Role.DOCTOR)).toBe(true);
+      expect(can(action, Role.ADMIN)).toBe(false);
+    }
+  });
+
+  it('only clinicians may add a summary addendum; patient/admin denied', () => {
+    expect(can(Action.ADD_ADDENDUM, Role.NURSE)).toBe(true);
+    expect(can(Action.ADD_ADDENDUM, Role.DOCTOR)).toBe(true);
+    expect(can(Action.ADD_ADDENDUM, Role.PATIENT)).toBe(false);
+    expect(can(Action.ADD_ADDENDUM, Role.ADMIN)).toBe(false);
   });
 
   it('is deny-by-default for an unknown action', () => {
@@ -96,5 +122,30 @@ describe('authorizeConsultationAction (role → state → ownership composition)
     expect(() => authorizeConsultationAction(admin, claimedByNurse, Action.READ_MESSAGES)).toThrow(
       ForbiddenActionException,
     );
+  });
+
+  it('denies an admin viewing an attachment (separation of duties, SC-6/SC-8)', () => {
+    const admin = { id: 'admin-1', role: Role.ADMIN };
+    const inSession = { ...claimedByNurse, state: ConsultationState.IN_SESSION };
+    expect(() => authorizeConsultationAction(admin, inSession, Action.VIEW_ATTACHMENT)).toThrow(
+      ForbiddenActionException,
+    );
+  });
+
+  it('denies a non-participant clinician viewing an attachment (membership-scoped)', () => {
+    const inSession = { ...claimedByNurse, state: ConsultationState.IN_SESSION };
+    expect(() =>
+      authorizeConsultationAction(otherNurse, inSession, Action.VIEW_ATTACHMENT),
+    ).toThrow(ForbiddenActionException);
+  });
+
+  it('allows the patient owner and assigned clinician to view an attachment', () => {
+    const inSession = { ...claimedByNurse, state: ConsultationState.IN_SESSION };
+    expect(() =>
+      authorizeConsultationAction(patient, inSession, Action.VIEW_ATTACHMENT),
+    ).not.toThrow();
+    expect(() =>
+      authorizeConsultationAction(nurse, inSession, Action.VIEW_ATTACHMENT),
+    ).not.toThrow();
   });
 });

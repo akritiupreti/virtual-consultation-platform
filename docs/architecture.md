@@ -4,7 +4,8 @@ How the Virtual Consultation Platform is structured, why, and where each
 responsibility lives. This document is **diagram-first**: each section opens with
 the picture, then explains it. It is updated as capabilities land — the claim-race
 and lifecycle sequence diagrams landed in Phase 2 (§4); the real-time fan-out,
-claim-TTL auto-requeue and reconnection sequences land in Phase 3 (§7).
+claim-TTL auto-requeue and reconnection sequences land in Phase 3 (§7); the
+attachment signed-URL and deactivation-reassignment sequences land in Phase 4 (§8).
 
 Related: [data model](data-model.md) · [state machine](state-machine.md) ·
 [authorization matrix](authorization-matrix.md) · [ADRs](adr/).
@@ -30,7 +31,7 @@ flowchart LR
 
     db[(PostgreSQL<br/>system of record)]
     redis[("Redis<br/>presence · pub/sub<br/>cached positions")]
-    obj[("Object storage<br/>attachments · Phase 4")]
+    obj[("Object storage<br/>attachments · local FS<br/>signed-URL access")]
 
     patient --> spa
     clinician --> spa
@@ -40,17 +41,16 @@ flowchart LR
     api --> db
     ws --> redis
     api --> redis
-    api -.-> obj
-
-    classDef later stroke-dasharray: 4 3;
-    class obj later
+    api --> obj
 ```
 
-The REST API and the WebSocket gateway (Phase 3) are both live; object storage
-(dashed) arrives in Phase 4. The backend is the only thing that touches the
-database — clients never do. Redis is reachable from both the gateway (pub/sub
-fan-out, presence) and the API (cached positions), but it is **not** a source of
-truth ([ADR-0004](adr/0004-redis-responsibilities.md)); PostgreSQL is.
+The REST API and the WebSocket gateway (Phase 3) are both live; object storage for
+attachments arrives in Phase 4 as a local filesystem store reached only through
+**app-issued signed URLs** ([ADR-0007](adr/0007-attachment-storage.md)) — the bytes
+are never served directly. The backend is the only thing that touches the database —
+clients never do. Redis is reachable from both the gateway (pub/sub fan-out,
+presence) and the API (cached positions), but it is **not** a source of truth
+([ADR-0004](adr/0004-redis-responsibilities.md)); PostgreSQL is.
 
 ---
 
@@ -84,6 +84,12 @@ flowchart TB
         claimttl[ClaimTtlService<br/>start-TTL auto-requeue]
     end
 
+    subgraph phase4 [Phase 4 — security ✅]
+        attach[AttachmentsModule<br/>upload · signed-URL download<br/>local object store]
+        usersm[UsersModule<br/>admin mgmt · deactivation<br/>mid-session reassignment]
+        throttle[ThrottlerGuard<br/>auth + upload rate limits]
+    end
+
     subgraph phase5 [Phase 5]
         common[CommonModule<br/>correlation IDs · metrics]
     end
@@ -105,6 +111,11 @@ flowchart TB
     realtime --- claimttl
     claimttl --> audit
     realtime --> prisma
+    attach --> prisma
+    attach --> audit
+    usersm --> consult
+    usersm --> realtime
+    usersm --> audit
 
     classDef later stroke-dasharray: 4 3;
     class common later
@@ -117,20 +128,23 @@ are plain, dependency-free units (a matrix, a policy function, a transition
 registry) that both the controllers and services read — the single definition of
 who-may-do-what-when (invariants 1 & 4).
 
-| Module                 | Responsibility                                                                                              | Phase                 |
-| ---------------------- | ----------------------------------------------------------------------------------------------------------- | --------------------- |
-| `ConfigModule`         | Load env (`../.env`), expose typed config                                                                   | 1                     |
-| `PrismaModule`         | Single global Prisma client; connection lifecycle                                                           | 1                     |
-| `AuthModule`           | Register (patient), login, JWT issue/verify, `GET /auth/me`                                                 | 1                     |
-| `AppController`        | Unauthenticated `GET /health` liveness                                                                      | 1                     |
-| `ConsultationsModule`  | State-machine enforcement, DB-atomic claim, lifecycle, derived priority+FIFO queue, "N ahead" positions     | 2 ✅ (real-time in 3) |
-| `MessagingModule`      | Persisted messages (REST); WebSocket room in Phase 3                                                        | 2 ✅ / 3              |
-| `SummariesModule`      | Draft (assigned clinician) + doctor-only finalize; immutable                                                | 2 ✅                  |
-| `AuditModule`          | Append-only audit events (no clinical content); admin-only read                                             | 2 ✅ / 4              |
-| `common/authz`         | Authorization matrix, role+state+ownership policy, `RolesGuard`                                             | 2 ✅                  |
-| `common/state-machine` | Transition registry (the central bank of transitions)                                                       | 2 ✅                  |
-| `RealtimeModule`       | WebSocket gateway (JWT handshake, room authz), Redis fan-out + presence + position cache, claim-TTL sweeper | 3 ✅                  |
-| `CommonModule`         | Validation helpers, error mapping, correlation-ID middleware, metrics                                       | 5                     |
+| Module                 | Responsibility                                                                                                | Phase                 |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------- | --------------------- |
+| `ConfigModule`         | Load env (`../.env`), expose typed config                                                                     | 1                     |
+| `PrismaModule`         | Single global Prisma client; connection lifecycle                                                             | 1                     |
+| `AuthModule`           | Register (patient), login, JWT issue/verify, `GET /auth/me`                                                   | 1                     |
+| `AppController`        | Unauthenticated `GET /health` liveness                                                                        | 1                     |
+| `ConsultationsModule`  | State-machine enforcement, DB-atomic claim, lifecycle, derived priority+FIFO queue, "N ahead" positions       | 2 ✅ (real-time in 3) |
+| `MessagingModule`      | Persisted messages (REST); WebSocket room in Phase 3                                                          | 2 ✅ / 3              |
+| `SummariesModule`      | Draft (assigned clinician) + doctor-only finalize; immutable                                                  | 2 ✅                  |
+| `AuditModule`          | Append-only audit events (no clinical content); admin-only read                                               | 2 ✅ / 4              |
+| `common/authz`         | Authorization matrix, role+state+ownership policy, `RolesGuard`                                               | 2 ✅                  |
+| `common/state-machine` | Transition registry (the central bank of transitions)                                                         | 2 ✅                  |
+| `RealtimeModule`       | WebSocket gateway (JWT handshake, room authz), Redis fan-out + presence + position cache, claim-TTL sweeper   | 3 ✅                  |
+| `AttachmentsModule`    | Upload (type/size/magic-byte validation), local object store, short-lived user-scoped signed-URL download     | 4 ✅                  |
+| `UsersModule`          | Admin user management, deactivation/reactivation, mid-session reassignment of a deactivated clinician's cases | 4 ✅                  |
+| `ThrottlerGuard`       | Global rate limiting with stricter auth/upload limits (ADR-0011)                                              | 4 ✅                  |
+| `CommonModule`         | Validation helpers, error mapping, correlation-ID middleware, metrics                                         | 5                     |
 
 ### Authorization seams (where the invariants are enforced)
 
@@ -407,3 +421,86 @@ Connection loss changes nothing server-side (state-machine.md "connection loss"
 exception). On reconnect the client re-authenticates, the gateway re-authorizes
 every room join, and the UI pulls the authoritative state over REST — missed
 events don't matter because the client re-reads the source of truth.
+
+---
+
+## 8. Security, privacy & audit (Phase 4)
+
+Phase 4 hardens the sensitive-data paths without changing the invariants: the
+single authorization matrix still governs everything, PostgreSQL stays
+authoritative, and admins still cannot read clinical content. The full threat model
+is in [security-privacy.md](security-privacy.md) and the audit catalogue in
+[audit-logging.md](audit-logging.md).
+
+### 8.1 Attachment upload & signed-URL retrieval (ADR-0007)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant P as Participant (patient/clinician)
+    participant API as AttachmentsService
+    participant AZ as authorizeConsultationAction
+    participant FS as Local object store
+    participant DB as PostgreSQL
+    participant SU as SignedUrlService
+
+    Note over P,DB: Upload — participant only, IN_SESSION, JPEG/PNG/PDF ≤10MB
+    P->>API: POST /consultations/:id/attachments (multipart)
+    API->>AZ: UPLOAD_ATTACHMENT (role → state → ownership)
+    API->>API: sniff magic bytes + match declared type (else 415)
+    API->>FS: write bytes under opaque UUID key
+    API->>DB: insert attachment row (metadata + storage_key)
+    API->>DB: audit ATTACHMENT_UPLOADED (id/type/size only)
+    API-->>P: 201 metadata
+
+    Note over P,SU: Retrieval — short-lived, user-scoped signed URL
+    P->>API: GET /consultations/:id/attachments
+    API->>AZ: VIEW_ATTACHMENT (participant; admin denied)
+    API->>SU: sign {attachmentId, userId, exp}
+    API-->>P: 200 list + downloadUrl + expiresAt
+    P->>API: GET /attachments/:id/download?token=…
+    API->>SU: verify signature + expiry + id match (else 403)
+    API->>DB: re-load bound user (must be ACTIVE) + re-run matrix
+    API->>DB: audit ATTACHMENT_ACCESSED
+    API->>FS: stream bytes
+    API-->>P: 200 file (inline, private no-store)
+```
+
+The signed URL is a convenience, not an authority: the download handler re-enters
+the same authorization pipeline every REST call uses, so an admin or non-participant
+is refused even with a valid link, and a tampered/expired/mismatched token is `403`.
+No PII or clinical data is ever in the URL.
+
+### 8.2 Deactivation & mid-session reassignment (ADR-0012)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Ad as Admin
+    participant U as UsersService
+    participant DB as PostgreSQL
+    participant C as ConsultationsService
+    participant RT as RealtimeService
+    participant Cl as Deactivated clinician
+    participant Pt as Patient
+
+    Ad->>U: POST /users/:id/deactivate
+    U->>DB: set status = DEACTIVATED (soft)
+    U->>DB: audit USER_DEACTIVATED
+    U->>C: reassignActiveCasesOf(clinicianId)
+    loop each CLAIMED / IN_SESSION case
+        C->>DB: atomic UPDATE → QUEUED, clear claimed_by/started_at<br/>WHERE claimed_by=:id AND state IN (CLAIMED, IN_SESSION)
+        C->>DB: audit CONSULTATION_REASSIGNED (system actor)
+        C->>RT: broadcast consultation:updated (→ QUEUED)
+    end
+    C->>RT: notifyQueueChanged("reassigned")
+    RT-->>Pt: consultation:updated + position:updated (picked up again)
+    U->>RT: disconnectUser(clinicianId)
+    RT-->>Cl: sockets dropped
+    Note over Cl: next REST request / WS handshake → 401 (status re-checked)
+```
+
+The reassignment reuses the atomic conditional-update pattern of the claim/TTL
+sweeper, so a race with the clinician's own last action resolves in the database.
+The patient keeps their original `enqueued_at`, so they do not lose their place in
+line, and is notified live (reconciling from REST on reconnect if offline).

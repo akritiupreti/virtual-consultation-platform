@@ -13,6 +13,7 @@ flowchart TB
         direction LR
         life[lifecycle] --- claim[claim concurrency] --- rbac[RBAC / separation of duties]
         rt[real-time live updates] --- ttl[claim-TTL requeue] --- wsauth[WS auth / authz]
+        obs[correlation-ID tracing] --- ready[readiness probe] --- metr[metrics endpoint]
     end
     subgraph unit [Unit · pure, no I/O]
         direction LR
@@ -57,6 +58,9 @@ covered regardless of the coverage percentage.
 | CS-13 | Full privilege-escalation matrix (role × state × ownership)           | `authorization-matrix.spec.ts` + `rbac.e2e-spec.ts`      | SC-7 / NFR-1             |
 | CS-14 | Deactivation: no login, token rejected, mid-session reassign, audited | `test/e2e/deactivation.e2e-spec.ts`                      | FR-23/24/25 / ADR-0012   |
 | CS-15 | Admin audit query filters + paginates + excludes clinical content     | `test/e2e/audit-query.e2e-spec.ts`                       | FR-15 / SC-6             |
+| CS-16 | A request is traceable end-to-end by correlation ID                   | `test/e2e/observability.e2e-spec.ts`                     | SC-15 / ADR-0013         |
+| CS-17 | Readiness reflects dependencies (Postgres gates; Redis non-gating)    | `test/e2e/observability.e2e-spec.ts`                     | SC-15 / ADR-0004         |
+| CS-18 | No PII/clinical data (nor headers/query) ever reaches the logs        | `logging-redaction.spec.ts` + audit no-content (CS-15)   | SC-9 / NFR-2             |
 
 ### How the concurrency test proves correctness (CS-2)
 
@@ -110,6 +114,26 @@ Redis running (below).
 - **Audit query (CS-15):** a full lifecycle is driven, then the admin query is
   filtered by actor/event/consultation and paginated; a scan of the whole response
   asserts no message body or summary text ever appears (SC-6); a non-admin is `403`.
+
+### How the observability scenarios are proven (CS-16 … CS-18)
+
+- **Correlation ID (CS-16):** a `POST /consultations` is sent with a known
+  `X-Correlation-Id`; the test asserts the response echoes it, then reads the admin
+  audit query for that consultation and asserts **every** resulting row carries the
+  same `metadata.correlationId` — proving the ID flows request → service → audit
+  (SC-15). It also checks that a missing ID is minted and a malformed one is rejected
+  and replaced (no header/log injection).
+- **Readiness (CS-17):** `GET /ready` returns 200 with `postgres: up` (the gating
+  dependency) and a reported `redis` state; the Redis check is asserted to be present
+  but non-gating, so a cache outage would degrade real-time without making the node
+  unready (ADR-0004).
+- **No clinical data in logs (CS-18):** a fast unit test
+  (`logging-redaction.spec.ts`) exercises the pino serializers and redaction policy
+  directly — asserting the request record is only `id`/`method`/`url` with the query
+  string stripped, the response record is only the status code, headers/bodies are
+  removed, and the probe endpoints are excluded. This is complemented by the existing
+  audit no-clinical-content scan (CS-15). A deterministic unit assertion is used
+  rather than scraping a live log stream, which would be brittle.
 
 > **Rate limiting (ADR-0011)** is enforced in dev/prod but its limits are scaled far
 > up in the test environment so the concurrency/e2e suites (many requests from one

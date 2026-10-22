@@ -1,0 +1,24 @@
+# Keep build context small and never leak local state/secrets into images.
+# Applies to both images (both build from the repo root).
+**/node_modules
+**/dist
+**/build
+**/coverage
+.git
+.github
+docs
+*.md
+# Local secrets & env — images get config from compose, never from a baked .env.
+.env
+.env.*
+!.env.example
+# Local attachment object store (ADR-0007) — never copy uploaded files into an image.
+var/
+backend/var/
+# Editor / OS / spec
+.vscode
+.idea
+.DS_Store
+Thumbs.db
+*.docx
+*.log

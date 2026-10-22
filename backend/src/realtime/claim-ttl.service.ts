@@ -1,8 +1,10 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SchedulerRegistry } from '@nestjs/schedule';
+import { randomUUID } from 'node:crypto';
 import { AUDIT_EVENTS } from '../audit/audit-events';
 import { AuditService } from '../audit/audit.service';
+import { CorrelationService } from '../common/correlation/correlation.service';
 import { REQUEUE, transitionFor } from '../common/state-machine/transitions';
 import { PrismaService } from '../prisma/prisma.service';
 import { RealtimeService } from './realtime.service';
@@ -35,6 +37,7 @@ export class ClaimTtlService implements OnModuleInit, OnModuleDestroy {
     private readonly audit: AuditService,
     private readonly realtime: RealtimeService,
     private readonly scheduler: SchedulerRegistry,
+    private readonly correlation: CorrelationService,
     config: ConfigService,
   ) {
     this.ttlSeconds = positiveIntOr(config.get('CLAIM_START_TTL_SECONDS'), DEFAULT_TTL_SECONDS);
@@ -67,6 +70,13 @@ export class ClaimTtlService implements OnModuleInit, OnModuleDestroy {
    * UPDATE guarantees exactly one requeue per case.
    */
   async sweepExpiredClaims(): Promise<number> {
+    // Each sweep runs under its own correlation ID so the requeue audit rows and
+    // log lines it produces share one trace token (SC-15), even though no HTTP
+    // request drives it.
+    return this.correlation.run(randomUUID(), () => this.doSweep());
+  }
+
+  private async doSweep(): Promise<number> {
     const cutoff = new Date(Date.now() - this.ttlSeconds * 1000);
     const overdue = await this.prisma.consultation.findMany({
       where: {

@@ -9,9 +9,11 @@ import {
   WebSocketServer,
 } from '@nestjs/websockets';
 import { Role, UserStatus } from '@prisma/client';
+import { randomUUID } from 'node:crypto';
 import type { Server, Socket } from 'socket.io';
 import { Action } from '../common/authz/authorization-matrix';
 import { ActingUser, authorizeConsultationAction } from '../common/authz/policy';
+import { CorrelationService } from '../common/correlation/correlation.service';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   consultationRoom,
@@ -52,7 +54,15 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
     private readonly prisma: PrismaService,
     private readonly presence: PresenceService,
     private readonly realtime: RealtimeService,
+    private readonly correlation: CorrelationService,
   ) {}
+
+  /** Run a socket handler inside the socket's correlation context so any logs or
+   * audit writes it triggers share one trace token (SC-15). */
+  private runWithCorrelation<T>(client: Socket, fn: () => T): T {
+    const id = (client.data.correlationId as string | undefined) ?? randomUUID();
+    return this.correlation.run(id, fn);
+  }
 
   afterInit(server: Server): void {
     // Give the publisher a handle to the socket server for fan-out.
@@ -84,20 +94,30 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
       return;
     }
     socket.data.user = user;
+    // One correlation ID per socket, reused by every event it sends, so a live
+    // session is traceable end-to-end (SC-15). A well-formed client-supplied ID is
+    // honoured; otherwise one is minted.
+    const supplied = socket.handshake.auth?.correlationId as string | undefined;
+    socket.data.correlationId =
+      typeof supplied === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(supplied)
+        ? supplied
+        : randomUUID();
     next();
   }
 
   /** The handshake middleware already authenticated the socket (data.user is set). */
   async handleConnection(client: Socket): Promise<void> {
-    const user = client.data.user as ActingUser | undefined;
-    if (!user) {
-      // Defensive: should not happen since the middleware gates the handshake.
-      client.disconnect(true);
-      return;
-    }
-    // Every user joins their personal room for position/state updates.
-    await client.join(userRoom(user.id));
-    await this.presence.markConnected(user.id);
+    return this.runWithCorrelation(client, async () => {
+      const user = client.data.user as ActingUser | undefined;
+      if (!user) {
+        // Defensive: should not happen since the middleware gates the handshake.
+        client.disconnect(true);
+        return;
+      }
+      // Every user joins their personal room for position/state updates.
+      await client.join(userRoom(user.id));
+      await this.presence.markConnected(user.id);
+    });
   }
 
   async handleDisconnect(client: Socket): Promise<void> {
@@ -114,15 +134,17 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
   /** Clinicians subscribe to the live triage queue (matrix: VIEW_QUEUE). */
   @SubscribeMessage(WS_EVENTS.SUBSCRIBE_QUEUE)
   handleSubscribeQueue(client: Socket): SubscriptionAck {
-    const user = client.data.user as ActingUser | undefined;
-    if (!user) {
-      return { ok: false, error: 'unauthorized' };
-    }
-    if (user.role !== Role.NURSE && user.role !== Role.DOCTOR) {
-      return { ok: false, error: 'forbidden' };
-    }
-    void client.join(QUEUE_ROOM);
-    return { ok: true };
+    return this.runWithCorrelation(client, () => {
+      const user = client.data.user as ActingUser | undefined;
+      if (!user) {
+        return { ok: false, error: 'unauthorized' };
+      }
+      if (user.role !== Role.NURSE && user.role !== Role.DOCTOR) {
+        return { ok: false, error: 'forbidden' };
+      }
+      void client.join(QUEUE_ROOM);
+      return { ok: true };
+    });
   }
 
   /** Participants join a consultation room (matrix: VIEW_CONSULTATION). */
@@ -131,33 +153,35 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
     client: Socket,
     payload: { consultationId?: string },
   ): Promise<SubscriptionAck> {
-    const user = client.data.user as ActingUser | undefined;
-    if (!user) {
-      return { ok: false, error: 'unauthorized' };
-    }
-    const id = payload?.consultationId;
-    if (!id) {
-      return { ok: false, error: 'bad_request' };
-    }
+    return this.runWithCorrelation(client, async () => {
+      const user = client.data.user as ActingUser | undefined;
+      if (!user) {
+        return { ok: false, error: 'unauthorized' };
+      }
+      const id = payload?.consultationId;
+      if (!id) {
+        return { ok: false, error: 'bad_request' };
+      }
 
-    const consultation = await this.prisma.consultation.findUnique({
-      where: { id },
-      select: { patientId: true, claimedBy: true, state: true },
+      const consultation = await this.prisma.consultation.findUnique({
+        where: { id },
+        select: { patientId: true, claimedBy: true, state: true },
+      });
+      if (!consultation) {
+        return { ok: false, error: 'not_found' };
+      }
+
+      try {
+        authorizeConsultationAction(user, consultation, Action.VIEW_CONSULTATION);
+      } catch {
+        // Admin or any non-participant lands here — separation of duties over WS.
+        return { ok: false, error: 'forbidden' };
+      }
+
+      await client.join(consultationRoom(id));
+      await this.emitPresence(id);
+      return { ok: true };
     });
-    if (!consultation) {
-      return { ok: false, error: 'not_found' };
-    }
-
-    try {
-      authorizeConsultationAction(user, consultation, Action.VIEW_CONSULTATION);
-    } catch {
-      // Admin or any non-participant lands here — separation of duties over WS.
-      return { ok: false, error: 'forbidden' };
-    }
-
-    await client.join(consultationRoom(id));
-    await this.emitPresence(id);
-    return { ok: true };
   }
 
   @SubscribeMessage(WS_EVENTS.LEAVE_CONSULTATION)

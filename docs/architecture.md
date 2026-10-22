@@ -6,6 +6,10 @@ the picture, then explains it. It is updated as capabilities land — the claim-
 and lifecycle sequence diagrams landed in Phase 2 (§4); the real-time fan-out,
 claim-TTL auto-requeue and reconnection sequences land in Phase 3 (§7); the
 attachment signed-URL and deactivation-reassignment sequences land in Phase 4 (§8).
+Phase 5 adds the observability & ops cross-cutting concerns — structured logging,
+correlation-ID tracing, health/readiness probes and metrics in
+[observability.md](observability.md), and the full-stack Docker Compose topology and
+CI/CD pipeline in [deployment.md](deployment.md).
 
 Related: [data model](data-model.md) · [state machine](state-machine.md) ·
 [authorization matrix](authorization-matrix.md) · [ADRs](adr/).
@@ -90,8 +94,9 @@ flowchart TB
         throttle[ThrottlerGuard<br/>auth + upload rate limits]
     end
 
-    subgraph phase5 [Phase 5]
-        common[CommonModule<br/>correlation IDs · metrics]
+    subgraph phase5 [Phase 5 — observability & ops ✅]
+        common[CommonModule<br/>correlation IDs · metrics · logging]
+        healthm[HealthModule<br/>/ready readiness probe]
     end
 
     auth --> prisma
@@ -116,9 +121,10 @@ flowchart TB
     usersm --> consult
     usersm --> realtime
     usersm --> audit
-
-    classDef later stroke-dasharray: 4 3;
-    class common later
+    common --> prisma
+    audit --> common
+    healthm --> prisma
+    healthm --> realtime
 ```
 
 The queue is **not** a module or a table — it is the set of `QUEUED` consultations
@@ -144,7 +150,8 @@ who-may-do-what-when (invariants 1 & 4).
 | `AttachmentsModule`    | Upload (type/size/magic-byte validation), local object store, short-lived user-scoped signed-URL download     | 4 ✅                  |
 | `UsersModule`          | Admin user management, deactivation/reactivation, mid-session reassignment of a deactivated clinician's cases | 4 ✅                  |
 | `ThrottlerGuard`       | Global rate limiting with stricter auth/upload limits (ADR-0011)                                              | 4 ✅                  |
-| `CommonModule`         | Validation helpers, error mapping, correlation-ID middleware, metrics                                         | 5                     |
+| `CommonModule`         | Correlation-ID store (ALS) + middleware, structured-logging config, Prometheus metrics + request interceptor  | 5 ✅                  |
+| `HealthModule`         | `GET /ready` readiness probe — PostgreSQL gates, Redis non-gating (ADR-0004); liveness stays on `GET /health` | 5 ✅                  |
 
 ### Authorization seams (where the invariants are enforced)
 
@@ -284,9 +291,11 @@ flowchart TB
 ```
 
 Phase 1 runs the API on the host (fast reload) against a Dockerised Postgres. The
-full stack — app container + Redis — is assembled in Phase 5. The target is
-**local Docker Compose** ([ADR-0008](adr/0008-deployment-target.md)); no hosted
-environment is in scope for the capstone.
+full stack — backend + frontend + Postgres + Redis — is assembled in Phase 5 behind
+one `docker compose up`; the topology, host-port mapping and container lifecycle are
+in [deployment.md](deployment.md). The target is **local Docker Compose**
+([ADR-0008](adr/0008-deployment-target.md)); no hosted environment is in scope for
+the capstone.
 
 ### Environment & configuration
 
@@ -308,9 +317,12 @@ flowchart LR
     typecheck --> test[jest]
 ```
 
-CI runs this chain on every PR and on `main` (`.github/workflows/ci.yml`). Build,
-integration/E2E and coverage gates are layered on in Phases 2–6
-([project-plan.md](project-plan.md)). The repo is an **npm workspaces monorepo**
+CI runs this chain on every PR and on `main` (`.github/workflows/ci.yml`). Phase 5
+adds two more jobs: an **integration/e2e** job against a real Postgres + Redis, and a
+**Docker image build** job that proves backend and frontend containerise (images are
+built, not pushed — local Compose target, ADR-0008). Coverage is reported
+**observe-only**; the gates are a Phase 6 concern. The full pipeline-stages diagram
+is in [deployment.md](deployment.md). The repo is an **npm workspaces monorepo**
 (`backend`, `frontend`) sharing one TypeScript base config, ESLint (flat) and
 Prettier, with Conventional-Commit enforcement via husky + commitlint.
 

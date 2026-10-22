@@ -2,12 +2,27 @@ import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { json, urlencoded } from 'express';
 import helmet from 'helmet';
+import { Logger } from 'nestjs-pino';
 import { AppModule } from './app.module';
+import {
+  createCorrelationMiddleware,
+  DEFAULT_CORRELATION_HEADER,
+} from './common/correlation/correlation.middleware';
+import { CorrelationService } from './common/correlation/correlation.service';
 import { RedisIoAdapter } from './realtime/redis-io.adapter';
 
 async function bootstrap(): Promise<void> {
   // Disable the default body parser so we can impose explicit size caps below.
-  const app = await NestFactory.create(AppModule, { bodyParser: false });
+  // bufferLogs defers startup logs until the pino logger is installed below.
+  const app = await NestFactory.create(AppModule, { bodyParser: false, bufferLogs: true });
+
+  // Route all framework logging through pino (structured JSON, ADR-0013).
+  app.useLogger(app.get(Logger));
+
+  // Correlation ID first of all (SC-15): it must run before the framework and the
+  // request logger so every downstream log line and the response header carry it.
+  const correlationHeader = process.env.CORRELATION_ID_HEADER ?? DEFAULT_CORRELATION_HEADER;
+  app.use(createCorrelationMiddleware(app.get(CorrelationService), correlationHeader));
 
   app.use(helmet());
 

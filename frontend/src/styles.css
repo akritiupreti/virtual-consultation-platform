@@ -3,12 +3,14 @@
   --surface: #ffffff;
   --border: #d9e0e6;
   --text: #1c2733;
-  --muted: #6b7a89;
+  /* --muted / --urgent darkened to clear WCAG 2.1 AA 4.5:1 on both surface and
+     page backgrounds (Phase 6 a11y pass; pinned by src/test/contrast.test.ts). */
+  --muted: #566573;
   --primary: #1f6feb;
   --primary-ink: #ffffff;
   --danger: #c0362c;
   --routine: #3a7d44;
-  --urgent: #b8860b;
+  --urgent: #8a6400;
   --emergency: #c0362c;
   --radius: 8px;
 }
@@ -176,7 +178,8 @@ td {
 
 .badge-patient {
   background: #e3effd;
-  color: #1f6feb;
+  /* Darkened from #1f6feb to clear AA 4.5:1 on the light badge background. */
+  color: #0b57d0;
 }
 .badge-nurse,
 .badge-doctor {

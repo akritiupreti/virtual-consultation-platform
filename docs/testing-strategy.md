@@ -1,40 +1,57 @@
 # Testing Strategy
 
 How the platform is tested and why. The guiding principle (from the reviewer) is
-**cover the critical scenarios, don't just chase a coverage number**. Coverage
-gates are a Phase 6 concern; the critical scenarios below are mandatory from
-Phase 2 onward.
+**cover the critical scenarios, don't just chase a coverage number**. The critical
+scenarios below are mandatory from Phase 2 onward; as of **Phase 6** the coverage
+gates, accessibility checks and visual-regression baselines are **finalized and
+CI-enforced** (NFR-6/7, SC-10/11/13, C23/24/25).
 
 ## Test pyramid
 
+Every tier below is now real and runs in CI; the frontend tiers (component, a11y,
+visual) were added in Phase 6.
+
 ```mermaid
 flowchart TB
-    subgraph e2e [Integration / e2e · real Postgres]
+    subgraph browser [Browser · Playwright + real Chromium · 4 critical screens]
+        direction LR
+        axe[axe WCAG 2.1 AA + contrast] --- vis[visual-regression screenshots] --- kbd[keyboard reachability]
+    end
+    subgraph fe [Frontend component · Vitest + RTL + jsdom]
+        direction LR
+        screens[login · triage · room · summary] --- jaxe[jest-axe AA + keyboard] --- libs[api / auth / realtime] --- contrast[token-contrast check]
+    end
+    subgraph e2e [Integration / e2e · real Postgres + Redis]
         direction LR
         life[lifecycle] --- claim[claim concurrency] --- rbac[RBAC / separation of duties]
         rt[real-time live updates] --- ttl[claim-TTL requeue] --- wsauth[WS auth / authz]
         obs[correlation-ID tracing] --- ready[readiness probe] --- metr[metrics endpoint]
     end
-    subgraph unit [Unit · pure, no I/O]
+    subgraph unit [Backend unit · pure, no I/O]
         direction LR
         tr[transition registry] --- mx[authorization matrix + policy] --- au[auth service]
+        svc[service guards: summaries · consultations · users · attachments · realtime/presence]
     end
-    unit --> e2e
-    e2e -.-> ui["Frontend component / a11y / visual<br/>(Phase 6)"]
-
-    classDef later stroke-dasharray: 4 3;
-    class ui later
+    unit --> e2e --> fe --> browser
 ```
 
-- **Unit tests** (fast, no database) cover the pure decision logic — the transition
-  registry and the authorization matrix/policy — plus the auth service with mocks.
-  They run in the main CI job on every PR.
-- **Integration / e2e tests** boot the real NestJS app against a **real PostgreSQL**
-  database, because the guarantees that matter (DB-atomic claim, cross-role access)
-  cannot be proven with mocks. They run in a dedicated CI job with a `postgres`
-  service container.
-- **Frontend component, accessibility and visual-regression** tests are scoped to
-  Phase 6 (see below).
+- **Backend unit tests** (fast, no database) cover the pure decision logic — the
+  transition registry, the authorization matrix/policy, the auth service — plus the
+  service-level guard and degrade branches (summary immutability/addendums, claim and
+  re-priority guards, user deactivation, attachment caps and signed-URL re-auth,
+  Redis-degrade paths) with Prisma mocked. They run on every PR.
+- **Integration / e2e tests** boot the real NestJS app against a **real PostgreSQL +
+  Redis**, because the guarantees that matter (DB-atomic claim, cross-role access,
+  real-time fan-out, readiness) cannot be proven with mocks. They run in a dedicated
+  CI job with `postgres` and `redis` service containers.
+- **Frontend component tests** (Vitest + React Testing Library + jsdom,
+  [ADR-0015](adr/0015-frontend-test-runner.md)) render each critical screen with the
+  API/realtime layers mocked, asserting behaviour, `jest-axe` AA structure and
+  keyboard interaction; lib tests cover the api/auth/realtime clients; a
+  token-contrast test pins WCAG ratios.
+- **Browser tests** (Playwright + real Chromium) run `@axe-core/playwright` (AA incl.
+  computed contrast) and pixel visual-regression on the four critical screens, against
+  a static build with the backend stubbed.
 
 ## Critical scenarios (mandatory)
 
@@ -176,15 +193,111 @@ To check it by hand: start Redis, run two backends on different ports (both with
 same `REDIS_URL`), connect a clinician to each, and confirm a claim on one instance
 updates the queue on the other.
 
-## Coverage
+## CI pipeline (Phase 6 — gates enforced)
 
-- Targets (Phase 6, CI-gated): **backend ≥ 90%**, **frontend ≥ 80%** (NFR-7).
-- Until then, coverage is observable (`npm run test:cov --workspace backend`) but not
-  gated, so effort goes to the critical scenarios first.
+Phase 5 produced coverage **observe-only**; Phase 6 turns the gates on and adds a
+dedicated accessibility + visual job. The pipeline (`.github/workflows/ci.yml`) runs
+four jobs in parallel on every PR and on `main`; a red gate blocks the merge (SC-16).
 
-## Accessibility & visual regression (Phase 6)
+```mermaid
+flowchart TB
+    pr([PR / push to main]) --> verify & integration & a11y & docker
 
-- **WCAG 2.1 AA** on the critical screens, verified with automated tooling (axe /
-  Lighthouse) plus keyboard-navigation and contrast checks (NFR-6, C24).
-- **Visual regression** on a fixed, small set of **critical screens** — login, triage
-  queue, consultation room, summary — not the whole app (C25).
+    subgraph verify [job: verify]
+        direction TB
+        v1[lint] --> v2[typecheck] --> v3[backend unit] --> v4["frontend test:cov<br/>GATE ≥80% ✅"]
+    end
+    subgraph integration [job: integration · Postgres + Redis]
+        direction TB
+        i1[prisma migrate deploy] --> i2[unit + e2e with coverage] --> i3[nyc merge] --> i4["nyc check-coverage<br/>GATE ≥90% stmts/lines/fns ✅"]
+    end
+    subgraph a11y [job: accessibility-visual · Playwright container]
+        direction TB
+        a1[build + serve stubbed app] --> a2["axe WCAG 2.1 AA + contrast"] --> a3["visual screenshots vs<br/>committed baselines"]
+    end
+    subgraph docker [job: docker]
+        direction TB
+        d1[build backend image] --> d2[build frontend image]
+    end
+
+    classDef gate fill:#e6f4ea,stroke:#2b7a3d;
+    class v4,i4 gate
+```
+
+The key Phase 6 change is the two **GATE** steps (green): frontend Vitest coverage in
+`verify`, and the merged backend `nyc check-coverage` in `integration` — both now fail
+the build on a regression, where Phase 5 only uploaded a report. The
+`accessibility-visual` job is new.
+
+## Coverage (CI-enforced — [ADR-0016](adr/0016-coverage-gate-strategy.md))
+
+Targets: **backend ≥ 90%**, **frontend ≥ 80%** (NFR-7 / SC-10 / SC-11). As of Phase 6
+these are **gates, not observations** — a drop below threshold fails CI.
+
+- **Backend — merged unit + e2e.** Unit-only coverage is ~13% _by design_: the core
+  guarantees (DB-atomic claim, RBAC, real-time, observability) are proven against real
+  Postgres/Redis, not mocks. So the gate is computed over the **union** of the unit and
+  e2e suites' Istanbul coverage: each runs with coverage (`test:cov:unit`,
+  `test:cov:e2e`), a helper merges them into `.nyc_output`, and `nyc check-coverage`
+  enforces it. Thresholds: **statements / lines / functions ≥ 90%**; **branches ≥ 65%**
+  (the remaining uncovered branches are socket-gateway, health-probe and config/degrade
+  paths the integration suite exercises in aggregate — forcing them one-by-one is the
+  number-chasing C23 warns against). Run locally with `npm run coverage:combined
+--workspace backend` (needs the test DB + Redis up). Current: ~93% stmts / ~71%
+  branch.
+- **Frontend — Vitest v8.** `npm run test:cov --workspace frontend` gates statements /
+  lines / functions / branches at **≥ 80%**. Current: ~95% stmts.
+- **Exclusions** (excluded, not fake-tested): DI modules, DTO shells, `main.ts`, the
+  Prisma seed, and the main-only socket.io Redis adapter.
+- **Critical scenarios stay the priority (SC-12):** CS-1 … CS-18 are covered
+  regardless of the percentage; the added tests closed real gaps (e.g. summary
+  addendums, deactivation guards, Redis-degrade paths), not vanity lines.
+
+## Accessibility (CI-enforced — [ADR-0017](adr/0017-accessibility-tooling.md))
+
+**WCAG 2.1 AA** on the four critical screens (login, triage queue, consultation room,
+summary), verified with **axe** in two tiers plus explicit keyboard and contrast checks
+(NFR-6 / SC-13 / C24):
+
+- **Component tier (fast, every PR):** `jest-axe` runs the axe AA ruleset on each
+  screen in jsdom; keyboard navigation (tab order, focus, Enter-to-submit) is asserted
+  with `user-event`.
+- **Browser tier:** `@axe-core/playwright` runs the full A/AA tag set against each
+  screen in real Chromium, where axe computes **colour contrast** against the rendered
+  layout (jsdom cannot).
+- **Token-contrast test:** a deterministic unit test checks every foreground/background
+  pair in `styles.css` against 4.5:1. This Phase 6 pass found and fixed real violations
+  — `--muted`, the `--urgent` tier colour and the patient badge were below AA and were
+  darkened.
+
+## Visual regression (CI-enforced — [ADR-0018](adr/0018-visual-regression.md))
+
+Pixel baselines on the **four critical screens only** (C25), via Playwright
+`toHaveScreenshot`. The screens render from a static build with the backend stubbed
+(Playwright `page.route` + seeded auth, socket blocked) — deterministic, no
+Postgres/Redis, no real data.
+
+- **Baselines are container-pinned.** Snapshots differ across operating systems (font
+  hinting/anti-aliasing), so they are generated and compared **only** inside the pinned
+  `mcr.microsoft.com/playwright` container and committed under
+  `frontend/tests/e2e/__screenshots__/`. CI runs the visual job in that same container.
+- **Regenerating baselines** (after an intended visual change) — run in-container, never
+  from a host OS:
+
+  ```bash
+  docker run --rm -v "$PWD":/work -v /work/node_modules -v /work/frontend/node_modules \
+    -v /work/backend/node_modules -w /work mcr.microsoft.com/playwright:v1.64.1-noble \
+    bash -c "npm ci && cd frontend && npx playwright test visual --update-snapshots"
+  ```
+
+  (The anonymous `node_modules` volumes keep the container's Linux install from
+  clobbering a host `node_modules`.) Commit the updated PNGs in the same PR.
+
+### Manual / one-time setup
+
+- Install the new dev deps: `npm install` (adds Vitest, Testing Library, jest-axe,
+  Playwright, `nyc`).
+- Download the Playwright browser for a **local** run: `npx playwright install chromium`
+  (CI uses the container image, which already has it).
+- **Docker Desktop** must be running for the backend merged-coverage run (needs the
+  `vcp_test` DB + Redis) and for regenerating visual baselines.

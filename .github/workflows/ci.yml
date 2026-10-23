@@ -41,18 +41,22 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      # Coverage is OBSERVE-ONLY in Phase 5: the report is produced and uploaded,
-      # but not gated. The ≥90% backend / ≥80% frontend gates are a Phase 6 concern
-      # (NFR-7 / SC-10/11), so effort stays on the critical scenarios until then.
-      - name: Test (unit) + coverage (observe-only)
-        run: npm run test:cov --workspace backend
+      # Backend unit tests for fast signal (the gated coverage number is the
+      # merged unit + e2e total, enforced in the `integration` job — ADR-0016).
+      - name: Test backend (unit)
+        run: npm run test --workspace backend
 
-      - name: Upload coverage report
+      # Frontend coverage is ENFORCED here (Phase 6): Vitest fails the job if the
+      # component/unit suite drops below the ≥80% thresholds (NFR-7 / SC-11).
+      - name: Test frontend (unit + component) — coverage GATE ≥80%
+        run: npm run test:cov --workspace frontend
+
+      - name: Upload frontend coverage report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: backend-coverage
-          path: backend/coverage
+          name: frontend-coverage
+          path: frontend/coverage
           if-no-files-found: ignore
 
   integration:
@@ -114,8 +118,20 @@ jobs:
       - name: Apply migrations to the test database
         run: npx prisma migrate deploy --schema backend/src/prisma/schema.prisma
 
-      - name: Test (e2e)
-        run: npm run test:e2e --workspace backend
+      # Runs the unit + e2e suites with coverage, merges them, and ENFORCES the
+      # gate: statements/lines/functions ≥90% (NFR-7 / SC-10), branches ≥65%.
+      # The merged total is the honest coverage number because the core
+      # guarantees are proven against real Postgres/Redis, not mocks (ADR-0016).
+      - name: Test (unit + e2e) — merged coverage GATE ≥90%
+        run: npm run coverage:combined --workspace backend
+
+      - name: Upload merged backend coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage
+          path: backend/coverage
+          if-no-files-found: ignore
 
   # Proves the full stack containerises and builds (SC-14 / ADR-0008). Images are
   # built but NOT pushed — the capstone deploys to local Docker Compose only, so
@@ -150,3 +166,41 @@ jobs:
           tags: vcp-frontend:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  # Accessibility (WCAG 2.1 AA) + visual regression on the four critical screens
+  # (C24 / C25 / SC-13 / ADR-0017 / ADR-0018). Runs INSIDE the pinned Playwright
+  # container so the browser, fonts and anti-aliasing match the committed
+  # snapshot baselines exactly — the cross-platform snapshot footgun. The app is
+  # served as a static build with the backend stubbed, so no Postgres/Redis.
+  accessibility-visual:
+    name: a11y · visual regression (critical screens)
+    runs-on: ubuntu-latest
+    container:
+      image: mcr.microsoft.com/playwright:v1.64.1-noble
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # One Playwright run covers both suites (axe a11y + screenshot diff) and
+      # builds/serves the app once via the config's webServer.
+      - name: Accessibility + visual regression
+        run: npx playwright test
+        working-directory: frontend
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: frontend/playwright-report
+          if-no-files-found: ignore

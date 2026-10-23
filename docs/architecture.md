@@ -310,19 +310,24 @@ instances.
 
 ```mermaid
 flowchart LR
-    install[npm ci] --> gen[prisma generate]
-    gen --> validate[prisma validate]
-    validate --> lint[eslint]
-    lint --> typecheck[tsc --noEmit]
-    typecheck --> test[jest]
+    pr([PR / main]) --> verify & integration & a11y[accessibility-visual] & docker
+    verify --> V["lint · typecheck · backend unit ·<br/>frontend coverage GATE ≥80%"]
+    integration --> I["migrate · unit+e2e coverage ·<br/>nyc merge · GATE ≥90%"]
+    a11y --> A["Playwright container:<br/>axe WCAG 2.1 AA · visual baselines"]
+    docker --> D["build backend + frontend images<br/>(no push)"]
 ```
 
-CI runs this chain on every PR and on `main` (`.github/workflows/ci.yml`). Phase 5
-adds two more jobs: an **integration/e2e** job against a real Postgres + Redis, and a
-**Docker image build** job that proves backend and frontend containerise (images are
-built, not pushed — local Compose target, ADR-0008). Coverage is reported
-**observe-only**; the gates are a Phase 6 concern. The full pipeline-stages diagram
-is in [deployment.md](deployment.md). The repo is an **npm workspaces monorepo**
+CI runs these jobs on every PR and on `main` (`.github/workflows/ci.yml`). The
+**integration/e2e** job runs against a real Postgres + Redis; the **docker** job proves
+both images containerise (built, not pushed — local Compose target, ADR-0008). As of
+**Phase 6** coverage is **gate-enforced**, not observe-only: the frontend Vitest gate
+(≥80%) runs in `verify`, and the **merged** backend unit + e2e coverage gate (≥90%
+statements/lines/functions) runs in `integration` via `nyc`
+([ADR-0016](adr/0016-coverage-gate-strategy.md)). A fourth job,
+**accessibility-visual**, runs axe WCAG 2.1 AA and visual-regression on the four
+critical screens inside the pinned Playwright container (ADR-0017/0018). Full
+pipeline detail is in [testing-strategy.md](testing-strategy.md) and
+[deployment.md](deployment.md). The repo is an **npm workspaces monorepo**
 (`backend`, `frontend`) sharing one TypeScript base config, ESLint (flat) and
 Prettier, with Conventional-Commit enforcement via husky + commitlint.
 

@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json.schemastore.org/nycrc",
+  "comment": "Coverage gate (ADR-0016). Reads the merged unit + e2e Istanbul output in .nyc_output. The headline NFR-7/SC-10 metric — statements/lines/functions — is gated at 90%. Branches are gated at 65 (current ~71%): the branches that remain uncovered are socket-gateway handlers, health-probe up/down checks, and config/degrade paths that the 57-test integration suite exercises in aggregate but that only contrived unit inputs would flip individually — the exact 'chase the number' anti-pattern the reviewer flagged (C23). Trivial wiring (DI modules, DTO shells, bootstrap, generated/seed code, and the main-only socket.io Redis adapter) is excluded rather than fake-tested.",
+  "all": false,
+  "check-coverage": true,
+  "statements": 90,
+  "lines": 90,
+  "functions": 90,
+  "branches": 65,
+  "exclude": [
+    "**/*.module.ts",
+    "**/dto/**",
+    "src/main.ts",
+    "src/prisma/seed.ts",
+    "src/realtime/redis-io.adapter.ts",
+    "**/*.spec.ts",
+    "test/**"
+  ]
+}

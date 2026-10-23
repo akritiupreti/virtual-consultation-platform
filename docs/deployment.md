@@ -134,12 +134,17 @@ flowchart TB
 
     subgraph verify [job: verify]
         direction LR
-        v1[npm ci] --> v2[prisma generate/validate] --> v3[lint] --> v4[typecheck] --> v5["test + coverage<br/>(observe-only)"]
+        v1[npm ci] --> v2[prisma generate/validate] --> v3[lint] --> v4[typecheck] --> v5[backend unit] --> v6["frontend coverage<br/>GATE ≥80%"]
     end
 
     subgraph integration [job: integration · e2e]
         direction LR
-        i1["postgres:16 + redis:7<br/>service containers"] --> i2[migrate deploy] --> i3["test:e2e<br/>(real DB + Redis)"]
+        i1["postgres:16 + redis:7<br/>service containers"] --> i2[migrate deploy] --> i3["unit + e2e coverage"] --> i4["nyc merge + check<br/>GATE ≥90%"]
+    end
+
+    subgraph a11y [job: accessibility-visual · Playwright container]
+        direction LR
+        a1["build + serve stubbed app"] --> a2["axe WCAG 2.1 AA"] --> a3["visual baselines"]
     end
 
     subgraph docker [job: docker image build]
@@ -149,30 +154,41 @@ flowchart TB
 
     trigger --> verify
     trigger --> integration
+    trigger --> a11y
     trigger --> docker
     verify --> gate{{"all green?"}}
     integration --> gate
+    a11y --> gate
     docker --> gate
     gate -->|yes| merge["mergeable (green CI to merge)"]
+
+    classDef gate fill:#e6f4ea,stroke:#2b7a3d;
+    class v6,i4 gate
 ```
 
-Three jobs run on every PR and on `main` (`.github/workflows/ci.yml`):
+Four jobs run on every PR and on `main` (`.github/workflows/ci.yml`):
 
-- **verify** — `npm ci` → Prisma generate/validate → lint → typecheck → unit tests
-  **with coverage**. Coverage is **observe-only** in Phase 5: the report is produced
-  and uploaded as an artifact, but **not gated**. The ≥90% backend / ≥80% frontend
-  gates (NFR-7, SC-10/11) are a **Phase 6** concern, so effort stays on the critical
-  scenarios until then.
+- **verify** — `npm ci` → Prisma generate/validate → lint → typecheck → backend unit
+  tests → **frontend coverage (GATE ≥80%)**. As of **Phase 6** the frontend Vitest
+  gate is enforced (NFR-7, SC-11); a drop below threshold fails the job.
 - **integration** — boots the app against a **real** `postgres:16` and `redis:7`
-  (service containers), applies migrations, and runs the e2e suite — the DB-atomic
-  and cross-role guarantees can't be proven with mocks.
+  (service containers), applies migrations, and runs the **unit + e2e suites with
+  coverage**, then **merges** them and runs `nyc check-coverage` — the backend coverage
+  **GATE ≥90%** (statements/lines/functions). The merged total is the honest number
+  because the DB-atomic and cross-role guarantees are proven against the real DB, not
+  mocks ([ADR-0016](adr/0016-coverage-gate-strategy.md)).
+- **accessibility-visual** — runs inside the pinned Playwright container (so fonts and
+  anti-aliasing match the committed snapshots), serving a static build with the backend
+  stubbed, then runs **axe WCAG 2.1 AA** (incl. contrast) and **visual-regression** on
+  the four critical screens (ADR-0017/0018).
 - **docker image build** — builds the backend and frontend images with Buildx to
   prove the stack containerises (SC-14). Images are **built but not pushed**: the
   target is local Compose (ADR-0008), so there is **no registry, no deploy stage,
   and no registry secrets**. A real hosted deploy would be an additive ADR.
 
-"Green CI to merge" is the measurable definition of clean history from
-`CONTRIBUTING.md` (C27).
+Phase 5's coverage was observe-only; **Phase 6 turns the gates on** (green nodes above)
+and adds the accessibility-visual job. "Green CI to merge" is the measurable definition
+of clean history from `CONTRIBUTING.md` (C27).
 
 ---
 

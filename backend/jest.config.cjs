@@ -6,6 +6,11 @@ module.exports = {
   roots: ['<rootDir>/src', '<rootDir>/test'],
   testRegex: '.*\\.spec\\.ts$',
   moduleFileExtensions: ['ts', 'js', 'json'],
-  collectCoverageFrom: ['src/**/*.(t|j)s', '!src/main.ts', '!src/prisma/seed.ts'],
+  collectCoverageFrom: [
+    'src/**/*.(t|j)s',
+    '!src/main.ts',
+    '!src/prisma/seed.ts',
+    '!src/realtime/redis-io.adapter.ts',
+  ],
   coverageDirectory: 'coverage',
 };

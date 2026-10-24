@@ -88,25 +88,56 @@ describe('ConsultationsService (unit)', () => {
     expect(queue[0]).toMatchObject({ symptomCategory: 'UNKNOWN', severity: 0, waitingSeconds: 0 });
   });
 
-  it('getMine uses the cached position fast path for queued cases', async () => {
-    const { service, prisma, realtime } = build(4);
-    prisma.consultation.findMany.mockResolvedValue([
-      row({ state: ConsultationState.QUEUED, summary: null }),
-    ]);
+  it('getMine resolves queued positions from a single ordered read (no per-row N+1)', async () => {
+    const { service, prisma } = build();
+    prisma.consultation.findMany
+      // 1) the patient's own consultations (newest first)
+      .mockResolvedValueOnce([
+        row({ id: 'c-1', state: ConsultationState.QUEUED, summary: null }),
+        row({
+          id: 'c-0',
+          state: ConsultationState.SUMMARIZED,
+          summary: { finalizedAt: new Date() },
+        }),
+      ])
+      // 2) the ordered queue in serving order (one read for every queued case)
+      .mockResolvedValueOnce([{ id: 'c-9' }, { id: 'c-1' }]);
     const mine = await service.getMine(patient);
-    expect(mine[0].position).toBe(4);
-    expect(realtime.getCachedPosition).toHaveBeenCalled();
+    expect(mine[0].position).toBe(1); // c-1 is second in serving order → 1 ahead
+    expect(mine[1].position).toBeNull(); // non-queued cases carry no position
+    expect(mine[1].summaryAvailable).toBe(true);
+    expect(prisma.consultation.findMany).toHaveBeenCalledTimes(2);
   });
 
-  it('getMine computes the position from the DB on a cache miss', async () => {
-    const { service, prisma } = build(null);
-    prisma.consultation.findMany.mockResolvedValue([
-      row({ state: ConsultationState.QUEUED, summary: { finalizedAt: new Date() } }),
+  it('getMine skips the queue read when the patient has no queued case', async () => {
+    const { service, prisma } = build();
+    prisma.consultation.findMany.mockResolvedValueOnce([
+      row({ id: 'c-0', state: ConsultationState.SUMMARIZED, summary: null }),
     ]);
-    prisma.consultation.count.mockResolvedValue(2);
     const mine = await service.getMine(patient);
-    expect(mine[0].position).toBe(2);
-    expect(mine[0].summaryAvailable).toBe(true);
+    expect(mine[0].position).toBeNull();
+    expect(prisma.consultation.findMany).toHaveBeenCalledTimes(1);
+  });
+
+  it('submitRequest computes the new position from the DB on a cache miss', async () => {
+    const { service, prisma } = build(null); // getCachedPosition → null
+    prisma.$transaction.mockImplementation(async (cb: (tx: unknown) => unknown) =>
+      cb({
+        consultation: {
+          create: jest.fn().mockResolvedValue({ id: 'c-1' }),
+          update: jest.fn().mockResolvedValue(row({ state: ConsultationState.QUEUED })),
+        },
+      }),
+    );
+    prisma.consultation.count.mockResolvedValue(3);
+    const view = await service.submitRequest(patient, {
+      chiefComplaint: 'synthetic',
+      symptomCategory: 'GENERAL',
+      onsetDuration: '1 day',
+      severity: 2,
+      consent: true,
+    } as never);
+    expect(view.position).toBe(3);
   });
 
   it('404s getOne for a missing consultation', async () => {

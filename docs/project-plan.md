@@ -172,26 +172,28 @@ clean and green.
 
 ## Documentation plan — every document to be produced
 
-| #   | Document                                                                | Phase      |
-| --- | ----------------------------------------------------------------------- | ---------- |
-| 1   | `README.md` (root)                                                      | 0 ✅       |
-| 2   | `CONTRIBUTING.md`                                                       | 0 ✅       |
-| 3   | `docs/README.md` (index)                                                | 0 ✅       |
-| 4   | `docs/project-plan.md`                                                  | 0 ✅       |
-| 5   | `docs/requirements.md`                                                  | 0 ✅       |
-| 6   | `docs/state-machine.md`                                                 | 0 ✅       |
-| 7   | `docs/authorization-matrix.md`                                          | 0 ✅       |
-| 8   | `docs/data-model.md` (ER)                                               | 0 ✅       |
-| 9   | `docs/success-criteria.md`                                              | 0 ✅       |
-| 10  | `docs/architecture.md`                                                  | 1 ✅       |
-| 11  | `docs/api-spec.md`                                                      | 1/2        |
-| 12  | `docs/security-privacy.md` (threat model)                               | 1/4        |
-| 13  | `docs/audit-logging.md`                                                 | 4          |
-| 14  | `docs/observability.md`                                                 | 5          |
-| 15  | `docs/deployment.md`                                                    | 5          |
-| 16  | `docs/testing-strategy.md`                                              | 2/6        |
-| 17  | `docs/adr/` — template + 0001–0006, 0008–0010 (more as decisions arise) | 🟡 ongoing |
-| 18  | `docs/retrospective.md`                                                 | 7          |
+| #   | Document                                                     | Phase      |
+| --- | ------------------------------------------------------------ | ---------- |
+| 1   | `README.md` (root)                                           | 0 ✅       |
+| 2   | `CONTRIBUTING.md`                                            | 0 ✅       |
+| 3   | `docs/README.md` (index)                                     | 0 ✅       |
+| 4   | `docs/project-plan.md`                                       | 0 ✅       |
+| 5   | `docs/requirements.md`                                       | 0 ✅       |
+| 6   | `docs/state-machine.md`                                      | 0 ✅       |
+| 7   | `docs/authorization-matrix.md`                               | 0 ✅       |
+| 8   | `docs/data-model.md` (ER)                                    | 0 ✅       |
+| 9   | `docs/success-criteria.md`                                   | 0 ✅       |
+| 10  | `docs/architecture.md`                                       | 1 ✅       |
+| 11  | `docs/api-spec.md`                                           | 1/2        |
+| 12  | `docs/security-privacy.md` (threat model)                    | 1/4        |
+| 13  | `docs/audit-logging.md`                                      | 4          |
+| 14  | `docs/observability.md`                                      | 5          |
+| 15  | `docs/deployment.md`                                         | 5          |
+| 16  | `docs/testing-strategy.md`                                   | 2/6        |
+| 17  | `docs/adr/` — template + 0001–0019 (more as decisions arise) | 🟡 ongoing |
+| 18  | `docs/retrospective.md`                                      | 7 ✅       |
+| 19  | `docs/performance.md`                                        | 7 ✅       |
+| 20  | `docs/demo-script.md`                                        | 7 ✅       |
 
 ### Planned ADRs (initial set)
 
@@ -207,6 +209,13 @@ clean and green.
 - ADR-0010 — Claim-start TTL via a DB-authoritative sweeper ✅
 - ADR-0011 — Application-level rate limiting ✅
 - ADR-0012 — Mid-session reassignment on clinician deactivation ✅
+- ADR-0013 — Structured logging & correlation IDs ✅
+- ADR-0014 — Metrics (Prometheus) ✅
+- ADR-0015 — Frontend test runner (Vitest) ✅
+- ADR-0016 — Coverage-gate strategy (merged unit + e2e) ✅
+- ADR-0017 — Accessibility tooling (two-tier axe) ✅
+- ADR-0018 — Visual-regression tooling & baseline strategy ✅
+- ADR-0019 — Audit-log query indexing (Phase 7 performance) ✅
 
 ---
 
@@ -257,18 +266,19 @@ Built out in Phase 1 (nothing created yet beyond docs):
 Addresses the reviewer's ask to separate _technologies used_ from _engineering
 capabilities_, each with evidence.
 
-| Engineering capability | Where it's implemented            | Artifact that demonstrates it                      |
-| ---------------------- | --------------------------------- | -------------------------------------------------- |
-| Workflow modeling      | Consultation state machine        | `state-machine.md` diagram + transition tests      |
-| Concurrency control    | DB-atomic claim                   | Sequence diagram + concurrency test (two claimers) |
-| AuthZ (role + state)   | Authorization matrix + guards     | `authorization-matrix.md` + RBAC tests             |
-| Real-time systems      | WebSockets + Redis pub/sub        | Architecture sequence diagram + live-update E2E    |
-| Data modeling          | Prisma schema                     | `data-model.md` ER diagram + migrations            |
-| Security & privacy     | Signed URLs, separation of duties | `security-privacy.md` threat model + privacy tests |
-| Observability          | Structured logs + correlation IDs | `observability.md` + a traced-request example      |
-| Testing discipline     | Test pyramid + gates              | `testing-strategy.md` + CI coverage report         |
-| Delivery / DevOps      | Docker Compose + GitHub Actions   | `deployment.md` + green pipeline                   |
-| Engineering judgment   | ADRs + retrospective              | `docs/adr/` + `retrospective.md`                   |
+| Engineering capability  | Where it's implemented            | Artifact that demonstrates it                      |
+| ----------------------- | --------------------------------- | -------------------------------------------------- |
+| Workflow modeling       | Consultation state machine        | `state-machine.md` diagram + transition tests      |
+| Concurrency control     | DB-atomic claim                   | Sequence diagram + concurrency test (two claimers) |
+| AuthZ (role + state)    | Authorization matrix + guards     | `authorization-matrix.md` + RBAC tests             |
+| Real-time systems       | WebSockets + Redis pub/sub        | Architecture sequence diagram + live-update E2E    |
+| Data modeling           | Prisma schema                     | `data-model.md` ER diagram + migrations            |
+| Security & privacy      | Signed URLs, separation of duties | `security-privacy.md` threat model + privacy tests |
+| Observability           | Structured logs + correlation IDs | `observability.md` + a traced-request example      |
+| Testing discipline      | Test pyramid + gates              | `testing-strategy.md` + CI coverage report         |
+| Performance engineering | Measured indexing + N+1 fix       | `performance.md` (EXPLAIN before/after) + ADR-0019 |
+| Delivery / DevOps       | Docker Compose + GitHub Actions   | `deployment.md` + green pipeline                   |
+| Engineering judgment    | ADRs + retrospective              | `docs/adr/` + `retrospective.md`                   |
 
 ---
 

@@ -197,18 +197,22 @@ export class ConsultationsService {
       include: { summary: { select: { finalizedAt: true } } },
     });
 
-    const views: MyConsultationView[] = [];
-    for (const row of rows) {
-      views.push({
-        id: row.id,
-        state: row.state,
-        priority: row.priority,
-        createdAt: row.createdAt,
-        position: row.state === ConsultationState.QUEUED ? await this.positionOf(row) : null,
-        summaryAvailable: row.summary?.finalizedAt != null,
-      });
-    }
-    return views;
+    // Resolve "N ahead" for every queued case from a single ordered read of the
+    // queue, rather than one cache/COUNT lookup per queued row. This removes an
+    // N+1 (a patient may hold several queued cases) and bounds the work on the
+    // Redis-down degrade path to one authoritative query (ADR-0002/0004, ADR-0019).
+    const positions = rows.some((r) => r.state === ConsultationState.QUEUED)
+      ? await this.queuePositions()
+      : null;
+
+    return rows.map((row) => ({
+      id: row.id,
+      state: row.state,
+      priority: row.priority,
+      createdAt: row.createdAt,
+      position: row.state === ConsultationState.QUEUED ? (positions?.get(row.id) ?? null) : null,
+      summaryAvailable: row.summary?.finalizedAt != null,
+    }));
   }
 
   /** Full participant view (patient owner or assigned clinician). */
@@ -496,6 +500,21 @@ export class ConsultationsService {
     if (result.count === 0) {
       throw new IllegalTransitionException(opts.action, opts.currentState);
     }
+  }
+
+  /**
+   * Serving-order index (0-based "N ahead") of every QUEUED case, read in one
+   * ordered query (priority tier then FIFO) — the authoritative basis for a
+   * patient's position without a per-row lookup. Used by the multi-row `getMine`;
+   * the single-row paths keep the cache-first `positionOf`.
+   */
+  private async queuePositions(): Promise<Map<string, number>> {
+    const queued = await this.prisma.consultation.findMany({
+      where: { state: ConsultationState.QUEUED },
+      orderBy: [{ priority: 'desc' }, { enqueuedAt: 'asc' }],
+      select: { id: true },
+    });
+    return new Map(queued.map((row, index) => [row.id, index]));
   }
 
   /** "N requests ahead": higher-priority cases, plus same-priority ones enqueued earlier. */

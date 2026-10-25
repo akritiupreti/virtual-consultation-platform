@@ -12,6 +12,7 @@ import type {
   MyConsultation,
   QueueItem,
   Summary,
+  UserAccount,
 } from '../lib/api';
 
 export const users: Record<string, AuthUser> = {
@@ -106,6 +107,30 @@ export function summary(overrides: Partial<Summary> = {}): Summary {
     ...overrides,
   };
 }
+
+export const userAccounts: UserAccount[] = [
+  {
+    id: 'u-admin',
+    email: 'admin@example.test',
+    role: 'ADMIN',
+    status: 'ACTIVE',
+    createdAt: '2026-10-20T08:00:00.000Z',
+  },
+  {
+    id: 'u-nurse',
+    email: 'nurse@example.test',
+    role: 'NURSE',
+    status: 'ACTIVE',
+    createdAt: '2026-10-20T08:05:00.000Z',
+  },
+  {
+    id: 'u-doctor',
+    email: 'doctor@example.test',
+    role: 'DOCTOR',
+    status: 'DEACTIVATED',
+    createdAt: '2026-10-20T08:10:00.000Z',
+  },
+];
 
 export const audit: AuditEntry[] = [
   {

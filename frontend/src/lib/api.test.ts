@@ -81,6 +81,23 @@ describe('api client', () => {
     await expect(api.cancel('c-1')).resolves.toBeUndefined();
   });
 
+  it('getAudit unwraps the paginated items array', async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
+      jsonResponse({ items: [{ id: 'a-1' }], total: 1, limit: 50, offset: 0 }),
+    );
+    await expect(api.getAudit()).resolves.toEqual([{ id: 'a-1' }]);
+  });
+
+  it('getAudit tolerates a bare array response', async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue(jsonResponse([{ id: 'a-1' }]));
+    await expect(api.getAudit()).resolves.toEqual([{ id: 'a-1' }]);
+  });
+
+  it('getAudit returns [] when the page has no items', async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue(jsonResponse({ total: 0 }));
+    await expect(api.getAudit()).resolves.toEqual([]);
+  });
+
   it('exposes ApiError as an Error subclass', () => {
     const err = new ApiError(418, 'teapot');
     expect(err).toBeInstanceOf(Error);
@@ -109,6 +126,9 @@ describe('api client', () => {
     ],
     ['getSummary', () => api.getSummary('c-1'), 'GET', '/consultations/c-1/summary'],
     ['getAudit', () => api.getAudit(), 'GET', '/audit'],
+    ['getUsers', () => api.getUsers(), 'GET', '/users'],
+    ['deactivateUser', () => api.deactivateUser('u-1'), 'POST', '/users/u-1/deactivate'],
+    ['reactivateUser', () => api.reactivateUser('u-1'), 'POST', '/users/u-1/reactivate'],
   ])('%s calls %s %s', async (_name, call, method, path) => {
     (fetch as ReturnType<typeof vi.fn>).mockResolvedValue(jsonResponse({}));
     await call();

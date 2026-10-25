@@ -92,16 +92,25 @@ Requires **Docker Desktop** running and a root `.env` (copy from `.env.example`)
 ```bash
 docker compose up -d --build        # Postgres + Redis + backend (auto-migrates) + frontend
 npm install                         # once, for the host-run seed + tests
-npm run seed --workspace backend    # four demo users, one per role (idempotent)
+npm run seed --workspace backend    # demo users + sample consultations (idempotent)
 ```
 
 Then open **http://localhost:8088** and sign in. All seed users share the password
-`Password123!`:
+`Password123!`. Use these canonical one-per-role logins:
 
 | Role    | Email               | Role   | Email              |
 | ------- | ------------------- | ------ | ------------------ |
 | Patient | `patient@vcp.local` | Doctor | `doctor@vcp.local` |
 | Nurse   | `nurse@vcp.local`   | Admin  | `admin@vcp.local`  |
+
+The seed also creates extra dummy accounts for testing lists and queues — several
+patients (`alice.patient@vcp.local` … `frank.patient@vcp.local`), nurses
+(`nina.nurse@vcp.local`, `noah.nurse@vcp.local`, and a deactivated
+`nora.nurse@vcp.local`) and doctors (`dana.doctor@vcp.local`, `omar.doctor@vcp.local`,
+`priya.doctor@vcp.local`) — plus a handful of sample consultations across the
+lifecycle, so the triage queue and the admin **Users** / **Audit log** screens have
+content immediately. Admins land on the audit log and can switch to user management
+from the nav bar.
 
 The API is on **http://localhost:3100** (`/health`, `/ready`, `/metrics`). Follow the
 **[demo script](docs/demo-script.md)** for a guided click-through of the full

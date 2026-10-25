@@ -22,7 +22,9 @@ export default function Login(): JSX.Element {
       } else {
         await register(email, password);
       }
-      navigate('/');
+      // Replace so the login page drops out of history — pressing Back after
+      // signing in must not return to a stale login form.
+      navigate('/', { replace: true });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Unable to authenticate');
     } finally {
@@ -31,7 +33,7 @@ export default function Login(): JSX.Element {
   }
 
   return (
-    <div className="card" style={{ maxWidth: 420, margin: '40px auto' }}>
+    <div className="card auth-card" style={{ maxWidth: 420, margin: '48px auto' }}>
       <h1>{mode === 'login' ? 'Log in' : 'Register as a patient'}</h1>
       <form onSubmit={submit}>
         <label htmlFor="email">Email</label>

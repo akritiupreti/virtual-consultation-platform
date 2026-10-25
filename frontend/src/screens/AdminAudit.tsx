@@ -7,7 +7,9 @@ export default function AdminAudit(): JSX.Element {
 
   const load = useCallback(async () => {
     try {
-      setEntries(await api.getAudit());
+      const data = await api.getAudit();
+      // Defensive: never let a shape surprise blank the whole screen.
+      setEntries(Array.isArray(data) ? data : []);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to load the audit log');
     }

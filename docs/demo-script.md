@@ -17,7 +17,7 @@ Related: [README](../README.md) (quickstart) · [architecture](architecture.md) 
 # From the repo root. Requires Docker Desktop running and a root .env (copy .env.example).
 docker compose up -d --build        # Postgres + Redis + backend (migrates on boot) + frontend
 npm install                         # once, for the host-run seed
-npm run seed --workspace backend    # create the four demo users (idempotent)
+npm run seed --workspace backend    # demo users + sample consultations (idempotent)
 ```
 
 | Surface              | URL                                   |
@@ -40,7 +40,10 @@ npm run seed --workspace backend    # create the four demo users (idempotent)
 | Doctor  | `doctor@vcp.local`  | `Password123!` |
 | Admin   | `admin@vcp.local`   | `Password123!` |
 
-(The password is `SEED_PASSWORD` in `.env`.) For the concurrency and multi-actor
+(The password is `SEED_PASSWORD` in `.env`.) The seed also adds extra dummy patients,
+nurses and doctors (including a deactivated `nora.nurse@vcp.local`) and a few sample
+consultations across the lifecycle, so the triage queue and the admin Users / Audit log
+screens already have content on a fresh database. For the concurrency and multi-actor
 steps, open **two browsers / profiles** (or one normal + one private window) so two
 roles can be signed in at once.
 
@@ -114,11 +117,13 @@ The guarantee lives in the **database**, not the UI (ADR-0003, invariant 2).
 
 ## 3. Authorization & separation of duties (RBAC)
 
-- **Admin** — sign in as `admin@vcp.local`. **Look for:** the admin lands on `/audit`
-  and can **manage users** and **read the audit log**, but there is **no way to open a
-  consultation room, messages, attachments or summary** — the admin is refused clinical
-  content everywhere (invariant 3, SC-6). This is enforced server-side: even calling the
-  API directly as an admin returns 403.
+- **Admin** — sign in as `admin@vcp.local`. **Look for:** the admin lands on the **Audit
+  log** and the nav bar offers exactly two destinations — **Users** (`/users`) and **Audit
+  log** (`/audit`). On **Users**, every account is listed with its role and status, and the
+  admin can **deactivate / reactivate** others (but not themselves). There is **no way to
+  open a consultation room, messages, attachments or summary** — the admin is refused
+  clinical content everywhere (invariant 3, SC-6). This is enforced server-side: even
+  calling the clinical API directly as an admin returns 403.
 - **Audit trail** — in `/audit`, filter by consultation / event type / actor. **Look
   for:** every state change, claim, finalize and attachment access is recorded as
   **who / what / when** — and **never** a message body, attachment content or summary

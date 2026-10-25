@@ -45,17 +45,18 @@ Error bodies follow Nest's shape: `{ "statusCode", "message", "error" }` where
 Roles: **P**atient · **N**urse · **D**octor · **A**dmin. "Guard" is the state +
 ownership condition checked after the role gate.
 
-| Method & path                       | Roles | Guard                                      | Body           | Success                                      |
-| ----------------------------------- | ----- | ------------------------------------------ | -------------- | -------------------------------------------- |
-| `POST /consultations`               | P     | —                                          | intake (below) | `201` my-consultation view (QUEUED)          |
-| `GET /consultations/queue`          | N,D   | —                                          | —              | `200` minimal pre-claim list (priority→FIFO) |
-| `GET /consultations/mine`           | P     | owner                                      | —              | `200` own consultations + "N ahead"          |
-| `GET /consultations/:id`            | P,N,D | participant                                | —              | `200` full detail + intake                   |
-| `POST /consultations/:id/claim`     | N,D   | `state=QUEUED` (DB-atomic)                 | —              | `200` CLAIMED · `409` if already claimed     |
-| `POST /consultations/:id/start`     | N,D   | assigned · `state=CLAIMED` · under cap     | —              | `200` IN_SESSION · `409` cap/again           |
-| `POST /consultations/:id/complete`  | N,D   | assigned · `state=IN_SESSION`              | —              | `200` ENDED                                  |
-| `POST /consultations/:id/cancel`    | P     | owner · `state∈{REQUESTED,QUEUED,CLAIMED}` | —              | `200` CANCELLED                              |
-| `PATCH /consultations/:id/priority` | N,D   | `state=QUEUED`                             | `{ priority }` | `200 { id, state, priority }`                |
+| Method & path                        | Roles | Guard                                                    | Body           | Success                                      |
+| ------------------------------------ | ----- | -------------------------------------------------------- | -------------- | -------------------------------------------- |
+| `POST /consultations`                | P     | —                                                        | intake (below) | `201` my-consultation view (QUEUED)          |
+| `GET /consultations/queue`           | N,D   | —                                                        | —              | `200` minimal pre-claim list (priority→FIFO) |
+| `GET /consultations/mine`            | P     | owner                                                    | —              | `200` own consultations + "N ahead"          |
+| `GET /consultations/pending-signoff` | D     | `state=ENDED` + drafted-unfinalized summary              | —              | `200` minimal sign-off worklist              |
+| `GET /consultations/:id`             | P,N,D | participant · _or_ doctor while `state=ENDED` (sign-off) | —              | `200` full detail + intake                   |
+| `POST /consultations/:id/claim`      | N,D   | `state=QUEUED` (DB-atomic)                               | —              | `200` CLAIMED · `409` if already claimed     |
+| `POST /consultations/:id/start`      | N,D   | assigned · `state=CLAIMED` · under cap                   | —              | `200` IN_SESSION · `409` cap/again           |
+| `POST /consultations/:id/complete`   | N,D   | assigned · `state=IN_SESSION`                            | —              | `200` ENDED                                  |
+| `POST /consultations/:id/cancel`     | P     | owner · `state∈{REQUESTED,QUEUED,CLAIMED}`               | —              | `200` CANCELLED                              |
+| `PATCH /consultations/:id/priority`  | N,D   | `state=QUEUED`                                           | `{ priority }` | `200 { id, state, priority }`                |
 
 **Intake body** (`POST /consultations`): `chiefComplaint` (3–2000), `symptomCategory`
 (controlled list), `onsetDuration`, `severity` (1–5), `consent` (**must be `true`**),
@@ -97,12 +98,12 @@ with a per-consultation count cap.
 
 ## Summary (clinical content — admin denied)
 
-| Method & path                              | Roles | Guard                                                 | Body                   | Success                      |
-| ------------------------------------------ | ----- | ----------------------------------------------------- | ---------------------- | ---------------------------- |
-| `POST /consultations/:id/summary`          | N,D   | assigned · `state∈{IN_SESSION,ENDED}` · not finalized | `{ content }` (1–8000) | `201` draft                  |
-| `POST /consultations/:id/summary/finalize` | D     | `state=ENDED`                                         | —                      | `200` finalized → SUMMARIZED |
-| `POST /consultations/:id/summary/addendum` | N,D   | clinician · `state=SUMMARIZED`                        | `{ content }` (1–8000) | `201` summary + addenda      |
-| `GET /consultations/:id/summary`           | P,N,D | participant; patient only when finalized              | —                      | `200` summary + addenda      |
+| Method & path                              | Roles | Guard                                                                                 | Body                   | Success                      |
+| ------------------------------------------ | ----- | ------------------------------------------------------------------------------------- | ---------------------- | ---------------------------- |
+| `POST /consultations/:id/summary`          | N,D   | assigned · `state∈{IN_SESSION,ENDED}` · not finalized                                 | `{ content }` (1–8000) | `201` draft                  |
+| `POST /consultations/:id/summary/finalize` | D     | `state=ENDED` (any doctor, incl. nurse-run cases)                                     | —                      | `200` finalized → SUMMARIZED |
+| `POST /consultations/:id/summary/addendum` | N,D   | clinician · `state=SUMMARIZED`                                                        | `{ content }` (1–8000) | `201` summary + addenda      |
+| `GET /consultations/:id/summary`           | P,N,D | participant (patient only when finalized), _or_ doctor while `state=ENDED` (sign-off) | —                      | `200` summary + addenda      |
 
 A finalized summary is **immutable**; corrections are **append-only addendums**
 (FR-13, C5) — the summary content itself is never mutated. Attempting to re-draft a

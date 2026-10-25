@@ -3,6 +3,15 @@ import { ForbiddenActionException, IllegalTransitionException } from '../errors/
 import { transitionFor } from '../state-machine/transitions';
 import { Action, Ownership, can, ownershipFor } from './authorization-matrix';
 
+/**
+ * States in which a case is "awaiting doctor sign-off" — sourced from the
+ * FINALIZE_SUMMARY transition so the read guard can never diverge from the set
+ * of states a doctor can actually finalise from (enforcement rule 3). Today that
+ * is exactly ENDED; it tracks the registry if that ever changes.
+ */
+const SIGNOFF_PENDING_STATES: ReadonlyArray<ConsultationState> =
+  transitionFor(Action.FINALIZE_SUMMARY)?.from ?? [];
+
 /** The acting user, reduced to what authorization needs. */
 export interface ActingUser {
   id: string;
@@ -65,6 +74,19 @@ function assertOwnership(
         throw new ForbiddenActionException();
       }
       break;
+    case Ownership.PARTICIPANT_OR_SIGNOFF_DOCTOR: {
+      const isParticipant =
+        consultation.patientId === user.id || consultation.claimedBy === user.id;
+      // Any doctor may read a case that is awaiting sign-off, so they can review
+      // (and then finalise, which is already role=DOCTOR/ownership=NONE) a case a
+      // nurse ran and no doctor ever joined. Never widens to admin (not DOCTOR).
+      const isSignoffDoctor =
+        user.role === Role.DOCTOR && SIGNOFF_PENDING_STATES.includes(consultation.state);
+      if (!isParticipant && !isSignoffDoctor) {
+        throw new ForbiddenActionException();
+      }
+      break;
+    }
     case Ownership.NONE:
       break;
   }

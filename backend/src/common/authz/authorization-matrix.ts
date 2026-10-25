@@ -44,6 +44,20 @@ export enum Ownership {
   ASSIGNED_CLINICIAN = 'ASSIGNED_CLINICIAN',
   /** Owner OR assigned clinician — the two parties in the room. */
   PARTICIPANT = 'PARTICIPANT',
+  /**
+   * The two participants, OR a doctor while the case is awaiting sign-off.
+   *
+   * A nurse-run case ends in `ENDED` with a drafted-but-unfinalized summary and
+   * has no doctor participant, yet `FINALIZE_SUMMARY` is `role=DOCTOR,
+   * ownership=NONE` — so any doctor may finalize it but, under plain
+   * `PARTICIPANT`, could not read what they are about to sign. This closes that
+   * read/finalize asymmetry: a doctor may read exactly the cases they are
+   * empowered to finalize, and nothing more. Admin is never DOCTOR, so it stays
+   * excluded (invariant 3); the "awaiting sign-off" states are the
+   * `FINALIZE_SUMMARY` transition's `from` set (registry = single source,
+   * enforcement rule 3), so this never drifts from what is actually finalizable.
+   */
+  PARTICIPANT_OR_SIGNOFF_DOCTOR = 'PARTICIPANT_OR_SIGNOFF_DOCTOR',
 }
 
 export interface Permission {
@@ -56,11 +70,13 @@ export const AUTHORIZATION_MATRIX: Record<Action, Permission> = {
   [Action.CANCEL_REQUEST]: { roles: [Role.PATIENT], ownership: Ownership.OWNER },
   [Action.VIEW_OWN_POSITION]: { roles: [Role.PATIENT], ownership: Ownership.OWNER },
   [Action.VIEW_QUEUE]: { roles: [Role.NURSE, Role.DOCTOR], ownership: Ownership.NONE },
-  // Full consultation detail (incl. intake) unlocks only for the two participants;
-  // an unassigned clinician sees only the minimal pre-claim queue view.
+  // Full consultation detail (incl. intake) unlocks for the two participants; an
+  // unassigned clinician sees only the minimal pre-claim queue view — except a
+  // doctor reviewing a case that is awaiting sign-off, who needs the clinical
+  // picture to finalise it responsibly (see Ownership.PARTICIPANT_OR_SIGNOFF_DOCTOR).
   [Action.VIEW_CONSULTATION]: {
     roles: [Role.PATIENT, Role.NURSE, Role.DOCTOR],
-    ownership: Ownership.PARTICIPANT,
+    ownership: Ownership.PARTICIPANT_OR_SIGNOFF_DOCTOR,
   },
   [Action.SET_PRIORITY]: { roles: [Role.NURSE, Role.DOCTOR], ownership: Ownership.NONE },
   [Action.CLAIM_CASE]: { roles: [Role.NURSE, Role.DOCTOR], ownership: Ownership.NONE },
@@ -102,9 +118,12 @@ export const AUTHORIZATION_MATRIX: Record<Action, Permission> = {
   // Append-only correction to a finalized (immutable) summary. Clinicians only;
   // the service gates it to state=SUMMARIZED (FR-13, C5). Never admin.
   [Action.ADD_ADDENDUM]: { roles: [Role.NURSE, Role.DOCTOR], ownership: Ownership.NONE },
+  // Participants see the summary (the patient only once finalised, gated in the
+  // service); a doctor may also read a drafted summary on a case awaiting their
+  // sign-off, so they can review it before finalising (invariant 3: never admin).
   [Action.VIEW_SUMMARY]: {
     roles: [Role.PATIENT, Role.NURSE, Role.DOCTOR],
-    ownership: Ownership.PARTICIPANT,
+    ownership: Ownership.PARTICIPANT_OR_SIGNOFF_DOCTOR,
   },
   [Action.VIEW_AUDIT_LOG]: { roles: [Role.ADMIN], ownership: Ownership.NONE },
   // User management is admin-only and not consultation-scoped (no ownership); it

@@ -107,10 +107,14 @@ export class SummariesService {
       return finalized;
     });
 
+    // actorId is the finalizing doctor; draftedBy records who authored the draft,
+    // so a nurse-drafts → doctor-signs-off handoff is auditable end-to-end as
+    // who/what/when (never the summary text — invariants 5 & 6).
     await this.audit.record({
       actorId: user.id,
       eventType: AUDIT_EVENTS.SUMMARY_FINALIZED,
       consultationId,
+      metadata: { draftedBy: existing.draftedBy },
     });
     // Notify the room + the patient that the summary is finalized (SUMMARIZED).
     this.realtime.broadcastConsultationUpdated({

@@ -25,26 +25,27 @@ flowchart LR
 
 Legend: ✅ allowed · ⚠️ allowed with guard · ❌ denied.
 
-| Action                             | Patient | Nurse | Doctor | Admin | Ownership / guard                               |
-| ---------------------------------- | :-----: | :---: | :----: | :---: | ----------------------------------------------- |
-| Register / log in                  |   ✅    |  ✅   |   ✅   |  ✅   | —                                               |
-| Submit request                     |   ✅    |  ❌   |   ❌   |  ❌   | —                                               |
-| View own queue position            |   ⚠️    |  ❌   |   ❌   |  ❌   | Own consultation                                |
-| View triage queue                  |   ❌    |  ✅   |   ✅   |  ❌   | —                                               |
-| View pre-claim case info (minimal) |   ❌    |  ✅   |   ✅   |  ❌   | Minimal fields only                             |
-| Claim case                         |   ❌    |  ⚠️   |   ⚠️   |  ❌   | `state=QUEUED`, under claim cap                 |
-| Start consultation                 |   ❌    |  ⚠️   |   ⚠️   |  ❌   | `actor = claimed_by`, `state=CLAIMED`           |
-| Send / read messages               |   ⚠️    |  ⚠️   |   ⚠️   |  ❌   | Participant of that consultation                |
-| Upload attachment                  |   ⚠️    |  ⚠️   |   ⚠️   |  ❌   | Participant; `state=IN_SESSION`                 |
-| View / download attachment         |   ⚠️    |  ⚠️   |   ⚠️   |  ❌   | Participant; short-lived user-scoped signed URL |
-| End consultation                   |   ❌    |  ⚠️   |   ⚠️   |  ❌   | `actor = claimed_by`, `state=IN_SESSION`        |
-| Draft summary                      |   ❌    |  ⚠️   |   ⚠️   |  ❌   | Assigned clinician                              |
-| Finalize summary                   |   ❌    |  ❌   |   ⚠️   |  ❌   | `role=DOCTOR`, `state=ENDED`                    |
-| Add summary addendum               |   ❌    |  ⚠️   |   ⚠️   |  ❌   | Clinician; `state=SUMMARIZED` (append-only)     |
-| View summary                       |   ⚠️    |  ⚠️   |   ⚠️   |  ❌   | Patient(own, finalized) / assigned clinician    |
-| View clinical content              |   ⚠️    |  ⚠️   |   ⚠️   |  ❌   | **Admin always denied**                         |
-| Manage / deactivate users          |   ❌    |  ❌   |   ❌   |  ✅   | —                                               |
-| View audit log                     |   ❌    |  ❌   |   ❌   |  ✅   | Excludes clinical content                       |
+| Action                             | Patient | Nurse | Doctor | Admin | Ownership / guard                                             |
+| ---------------------------------- | :-----: | :---: | :----: | :---: | ------------------------------------------------------------- |
+| Register / log in                  |   ✅    |  ✅   |   ✅   |  ✅   | —                                                             |
+| Submit request                     |   ✅    |  ❌   |   ❌   |  ❌   | —                                                             |
+| View own queue position            |   ⚠️    |  ❌   |   ❌   |  ❌   | Own consultation                                              |
+| View triage queue                  |   ❌    |  ✅   |   ✅   |  ❌   | —                                                             |
+| View pre-claim case info (minimal) |   ❌    |  ✅   |   ✅   |  ❌   | Minimal fields only                                           |
+| View pending sign-off worklist     |   ❌    |  ❌   |   ✅   |  ❌   | ENDED + drafted-unfinalized; minimal fields                   |
+| Claim case                         |   ❌    |  ⚠️   |   ⚠️   |  ❌   | `state=QUEUED`, under claim cap                               |
+| Start consultation                 |   ❌    |  ⚠️   |   ⚠️   |  ❌   | `actor = claimed_by`, `state=CLAIMED`                         |
+| Send / read messages               |   ⚠️    |  ⚠️   |   ⚠️   |  ❌   | Participant of that consultation                              |
+| Upload attachment                  |   ⚠️    |  ⚠️   |   ⚠️   |  ❌   | Participant; `state=IN_SESSION`                               |
+| View / download attachment         |   ⚠️    |  ⚠️   |   ⚠️   |  ❌   | Participant; short-lived user-scoped signed URL               |
+| End consultation                   |   ❌    |  ⚠️   |   ⚠️   |  ❌   | `actor = claimed_by`, `state=IN_SESSION`                      |
+| Draft summary                      |   ❌    |  ⚠️   |   ⚠️   |  ❌   | Assigned clinician                                            |
+| Finalize summary                   |   ❌    |  ❌   |   ⚠️   |  ❌   | `role=DOCTOR`, `state=ENDED`                                  |
+| Add summary addendum               |   ❌    |  ⚠️   |   ⚠️   |  ❌   | Clinician; `state=SUMMARIZED` (append-only)                   |
+| View summary                       |   ⚠️    |  ⚠️   |   ⚠️   |  ❌   | Participant, **or any doctor while `state=ENDED`** (sign-off) |
+| View clinical content              |   ⚠️    |  ⚠️   |   ⚠️   |  ❌   | **Admin always denied**                                       |
+| Manage / deactivate users          |   ❌    |  ❌   |   ❌   |  ✅   | —                                                             |
+| View audit log                     |   ❌    |  ❌   |   ❌   |  ✅   | Excludes clinical content                                     |
 
 ## Enforcement rules
 
@@ -62,3 +63,10 @@ Legend: ✅ allowed · ⚠️ allowed with guard · ❌ denied.
 6. **Deactivated accounts are denied everything.** Account status is re-checked
    against the database on every REST request and WebSocket handshake, so a token
    issued before deactivation stops working immediately (FR-25).
+7. **Doctor sign-off read window.** Because `FINALIZE_SUMMARY` is doctor-only and
+   not participant-scoped, a doctor may also **read** a case (consultation detail +
+   summary) while it is **awaiting sign-off** — i.e. in the `FINALIZE_SUMMARY`
+   transition's source state (`ENDED`) with a drafted, unfinalized summary — even if
+   they did not run it. This closes the read/finalize asymmetry for nurse-run cases
+   and is scoped by rule 3 (states come from the registry); admin is never a doctor,
+   so separation of duties is untouched ([ADR-0020](adr/0020-doctor-signoff-of-nurse-run-cases.md)).

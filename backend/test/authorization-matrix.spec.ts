@@ -149,3 +149,57 @@ describe('authorizeConsultationAction (role → state → ownership composition)
     ).not.toThrow();
   });
 });
+
+/**
+ * Doctor sign-off read window (ADR-0020): FINALIZE_SUMMARY is doctor-only and not
+ * participant-scoped, so a doctor may also READ a case (detail + summary) while it
+ * is awaiting sign-off (ENDED), even one a nurse ran and no doctor joined — but
+ * nothing wider.
+ */
+describe('doctor sign-off read window (PARTICIPANT_OR_SIGNOFF_DOCTOR)', () => {
+  const otherDoctor = { id: 'doc-2', role: Role.DOCTOR };
+  const otherNurse = { id: 'nurse-2', role: Role.NURSE };
+  const patient = { id: 'patient-1', role: Role.PATIENT };
+  // A nurse ran this case; no doctor ever participated.
+  const nurseRunEnded = {
+    patientId: patient.id,
+    claimedBy: 'nurse-1',
+    state: ConsultationState.ENDED,
+  };
+  const SIGNOFF_READS = [Action.VIEW_CONSULTATION, Action.VIEW_SUMMARY];
+
+  it('lets a non-participant doctor read an ENDED case awaiting sign-off', () => {
+    for (const action of SIGNOFF_READS) {
+      expect(() => authorizeConsultationAction(otherDoctor, nurseRunEnded, action)).not.toThrow();
+    }
+  });
+
+  it('still denies a non-participant doctor before the case has ended', () => {
+    const inSession = { ...nurseRunEnded, state: ConsultationState.IN_SESSION };
+    for (const action of SIGNOFF_READS) {
+      expect(() => authorizeConsultationAction(otherDoctor, inSession, action)).toThrow(
+        ForbiddenActionException,
+      );
+    }
+  });
+
+  it('does not extend the read window to a non-participant nurse or other patient', () => {
+    const otherPatient = { id: 'patient-2', role: Role.PATIENT };
+    for (const action of SIGNOFF_READS) {
+      expect(() => authorizeConsultationAction(otherNurse, nurseRunEnded, action)).toThrow(
+        ForbiddenActionException,
+      );
+      expect(() => authorizeConsultationAction(otherPatient, nurseRunEnded, action)).toThrow(
+        ForbiddenActionException,
+      );
+    }
+  });
+
+  it('still admits the genuine participants (owner + assigned clinician)', () => {
+    const assignedNurse = { id: 'nurse-1', role: Role.NURSE };
+    for (const action of SIGNOFF_READS) {
+      expect(() => authorizeConsultationAction(assignedNurse, nurseRunEnded, action)).not.toThrow();
+      expect(() => authorizeConsultationAction(patient, nurseRunEnded, action)).not.toThrow();
+    }
+  });
+});

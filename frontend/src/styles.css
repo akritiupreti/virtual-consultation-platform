@@ -289,6 +289,19 @@ button.danger:hover {
   margin-right: 8px;
 }
 
+/* Inline confirmation (e.g. finalizing a summary — an irreversible action). */
+.confirm {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--border, #d9dce3);
+  border-radius: 10px;
+  background: var(--surface-2, #f6f7f9);
+}
+
+.confirm p {
+  margin: 0 0 10px;
+}
+
 /* ── Tables ───────────────────────────────────────────────────────────────── */
 table {
   width: 100%;

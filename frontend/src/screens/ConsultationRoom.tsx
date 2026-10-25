@@ -1,5 +1,5 @@
 import { FormEvent, JSX, useCallback, useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import BackButton from '../components/BackButton';
 import { ApiError, api, ConsultationDetail, Message } from '../lib/api';
 import { useAuth } from '../lib/auth';
@@ -7,6 +7,7 @@ import { PresenceParticipant, useConsultationRoom } from '../lib/realtime';
 
 export default function ConsultationRoom(): JSX.Element {
   const { id = '' } = useParams();
+  const navigate = useNavigate();
   const { user } = useAuth();
   const [detail, setDetail] = useState<ConsultationDetail | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -79,13 +80,27 @@ export default function ConsultationRoom(): JSX.Element {
   // draft" step first. Gated behind an explicit confirmation (finalize is final).
   async function finalizeWithDraft(): Promise<void> {
     const text = draft.trim();
+    // Only the assigned clinician may (re)write the draft; a sign-off doctor who did
+    // not run the case finalizes the existing draft as-is (corrections become addenda),
+    // so we never call draftSummary for them — that is assigned-clinician-only and 403s.
+    const assignedToMe = !!user && detail?.claimedBy === user.id;
     setConfirming(false);
-    await act(async () => {
-      if (text) {
+    setError(null);
+    try {
+      if (text && assignedToMe) {
         await api.draftSummary(id, text);
       }
       await api.finalizeSummary(id);
-    });
+      if (assignedToMe) {
+        await loadDetail();
+      } else {
+        // A sign-off doctor loses read access once the case is SUMMARIZED (the read
+        // window is ENDED-only), so reloading the room would 403 — return to the worklist.
+        navigate('/pending-signoff');
+      }
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Action failed');
+    }
   }
 
   async function send(event: FormEvent<HTMLFormElement>): Promise<void> {
@@ -115,10 +130,15 @@ export default function ConsultationRoom(): JSX.Element {
   }
 
   const inSession = detail.state === 'IN_SESSION';
-  const canDraft =
-    isClinician && (inSession || detail.state === 'ENDED') && !detail.summaryFinalized;
-  // Doctor sign-off becomes available once the session has ended (ENDED → SUMMARIZED).
+  const isAssignedClinician = !!user && detail.claimedBy === user.id;
+  // Only the assigned clinician may write the draft (DRAFT_SUMMARY). A sign-off
+  // doctor who did not run the case reviews it read-only and finalizes as-is.
+  const canEditDraft =
+    isAssignedClinician && (inSession || detail.state === 'ENDED') && !detail.summaryFinalized;
+  // Doctor sign-off becomes available once the session has ended (ENDED → SUMMARIZED),
+  // for any doctor — including one reviewing a case a nurse ran (ADR-0020).
   const canFinalize = isDoctor && detail.state === 'ENDED' && !detail.summaryFinalized;
+  const reviewingForSignoff = canFinalize && !isAssignedClinician;
 
   return (
     <>
@@ -174,7 +194,7 @@ export default function ConsultationRoom(): JSX.Element {
             )}
           </div>
 
-          {canDraft && (
+          {canEditDraft && (
             <div style={{ marginTop: 12 }}>
               <label htmlFor="draft">Summary draft</label>
               <textarea id="draft" value={draft} onChange={(e) => setDraft(e.target.value)} />
@@ -193,26 +213,42 @@ export default function ConsultationRoom(): JSX.Element {
                 )}
               </div>
 
-              {canFinalize && confirming && (
-                <div className="confirm" role="alertdialog" aria-label="Confirm finalize">
-                  <p>
-                    Finalizing locks this summary. Afterwards, corrections can only be added as
-                    addenda — the summary itself can no longer be edited.
-                  </p>
-                  <div className="inline">
-                    <button onClick={() => void finalizeWithDraft()}>Confirm &amp; finalize</button>
-                    <button className="secondary" onClick={() => setConfirming(false)}>
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              )}
-
               {!isDoctor && detail.state === 'ENDED' && (
                 <p className="muted" style={{ marginTop: 8 }}>
                   Draft saved. A doctor must sign off to finalize this summary.
                 </p>
               )}
+            </div>
+          )}
+
+          {reviewingForSignoff && (
+            <div style={{ marginTop: 12 }}>
+              <label htmlFor="draft-review">Summary draft (awaiting your sign-off)</label>
+              <textarea id="draft-review" value={draft} readOnly />
+              <p className="muted" style={{ marginTop: 8 }}>
+                Drafted by the clinician who ran this consultation. Review it, then sign off to
+                finalize. After finalizing, corrections can only be added as addenda.
+              </p>
+              <div className="inline" style={{ marginTop: 8 }}>
+                <button disabled={!draft.trim()} onClick={() => setConfirming(true)}>
+                  Finalize &amp; sign off
+                </button>
+              </div>
+            </div>
+          )}
+
+          {canFinalize && confirming && (
+            <div className="confirm" role="alertdialog" aria-label="Confirm finalize">
+              <p>
+                Finalizing locks this summary. Afterwards, corrections can only be added as addenda
+                — the summary itself can no longer be edited.
+              </p>
+              <div className="inline">
+                <button onClick={() => void finalizeWithDraft()}>Confirm &amp; finalize</button>
+                <button className="secondary" onClick={() => setConfirming(false)}>
+                  Cancel
+                </button>
+              </div>
             </div>
           )}
         </div>

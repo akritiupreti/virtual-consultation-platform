@@ -1,3 +1,4 @@
+import { waitFor } from '@testing-library/react';
 import { axe } from 'jest-axe';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AuthUser } from '../lib/api';
@@ -79,12 +80,40 @@ describe('ConsultationRoom screen', () => {
     expect(await findByRole('button', { name: /finalize & sign off/i })).toBeInTheDocument();
   });
 
-  it('does not offer Finalize & sign off to a nurse on an ENDED case', async () => {
-    mock.getConsultation.mockResolvedValue(fixtures.consultation({ state: 'ENDED' }));
+  it('does not offer Finalize & sign off to the assigned nurse on an ENDED case', async () => {
+    // The nurse who ran the case (assigned clinician) can still draft, but sign-off is doctor-only.
+    mock.getConsultation.mockResolvedValue(
+      fixtures.consultation({ state: 'ENDED', claimedBy: 'u-nurse' }),
+    );
     const { findByText, queryByRole } = render(fixtures.users.nurse);
-    // The nurse can still draft, but sign-off is doctor-only.
     await findByText(/a doctor must sign off/i);
     expect(queryByRole('button', { name: /finalize & sign off/i })).not.toBeInTheDocument();
+  });
+
+  it('lets a non-assigned doctor review read-only and sign off a nurse-run case without re-drafting', async () => {
+    // A nurse ran this case (claimedBy = u-nurse); the signing doctor never claimed it.
+    mock.getConsultation.mockResolvedValue(
+      fixtures.consultation({ state: 'ENDED', claimedBy: 'u-nurse' }),
+    );
+    mock.getSummary.mockResolvedValue(
+      fixtures.summary({ finalized: false, content: 'Nurse-authored draft' }),
+    );
+    mock.finalizeSummary.mockResolvedValue(fixtures.summary({ finalized: true }));
+    const { user, findByLabelText, findByRole, getByRole } = render(fixtures.users.doctor);
+
+    // The draft is shown read-only — there is no editable "Summary draft" field.
+    const review = await findByLabelText(/awaiting your sign-off/i);
+    expect(review).toHaveAttribute('readonly');
+    await waitFor(() => expect(review).toHaveValue('Nurse-authored draft'));
+
+    const signOff = await findByRole('button', { name: /finalize & sign off/i });
+    await waitFor(() => expect(signOff).toBeEnabled());
+    await user.click(signOff);
+    await user.click(getByRole('button', { name: /confirm & finalize/i }));
+
+    // Finalizes the existing draft as-is — never re-drafts (that would 403 for a non-assigned doctor).
+    expect(mock.draftSummary).not.toHaveBeenCalled();
+    expect(mock.finalizeSummary).toHaveBeenCalledWith('c-1');
   });
 
   it('finalizing saves the current draft then locks it, after confirmation', async () => {

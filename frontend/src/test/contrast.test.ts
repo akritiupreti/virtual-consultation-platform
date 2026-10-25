@@ -69,6 +69,8 @@ describe('WCAG 2.1 AA colour contrast (design tokens)', () => {
     ['muted text on surface', () => token('muted'), surface, normal],
     ['muted text on page background', () => token('muted'), bg, normal],
     ['button label on primary', () => token('primary-ink'), () => token('primary'), normal],
+    // Active step label in the status stepper uses --primary-700 as text.
+    ['primary-700 text on surface', () => token('primary-700'), surface, normal],
     ['danger text on surface', () => token('danger'), surface, normal],
     ['danger text on error banner', () => token('danger'), () => ERROR_BG, normal],
     ['routine tier on surface', () => token('routine'), surface, normal],

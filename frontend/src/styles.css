@@ -512,6 +512,143 @@ pre {
   font-size: 0.85em;
 }
 
+/* ── Screen-reader-only utility ───────────────────────────────────────────── */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ── Patient consultation list + status stepper ───────────────────────────── */
+.consult-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.consult-item {
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.consult-item:last-child {
+  border-bottom: none;
+}
+
+.consult-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.consult-actions {
+  margin-top: 2px;
+}
+
+.stepper {
+  display: flex;
+  list-style: none;
+  margin: 12px 0 6px;
+  padding: 0;
+}
+
+.stepper-step {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  text-align: center;
+}
+
+/* Connector line: spans from the previous dot's centre to this one's. */
+.stepper-step::before {
+  content: '';
+  position: absolute;
+  top: 10px;
+  left: -50%;
+  width: 100%;
+  height: 2px;
+  background: var(--border);
+  z-index: 0;
+}
+
+.stepper-step:first-child::before {
+  display: none;
+}
+
+.stepper-step.is-done::before,
+.stepper-step.is-current::before {
+  background: var(--primary);
+}
+
+.stepper-dot {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  background: var(--surface);
+  /* Tick uses button-label-on-primary (AA-tested) once the dot fills in. */
+  color: var(--primary-ink);
+  font-size: 0.72rem;
+  line-height: 1;
+}
+
+.is-done .stepper-dot {
+  background: var(--primary);
+  border-color: var(--primary);
+}
+
+.is-current .stepper-dot {
+  border-color: var(--primary);
+  box-shadow: var(--ring);
+}
+
+.stepper-label {
+  font-size: 0.72rem;
+  line-height: 1.2;
+  color: var(--muted);
+}
+
+.is-done .stepper-label {
+  color: var(--text);
+}
+
+.is-current .stepper-label {
+  /* --primary-700 on --surface is AA-tested in contrast.test.ts. */
+  color: var(--primary-700);
+  font-weight: 700;
+}
+
+.stepper-cancelled {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0 6px;
+  font-weight: 600;
+  color: var(--danger);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .is-current .stepper-dot {
+    box-shadow: none;
+    outline: 2px solid var(--primary);
+    outline-offset: 1px;
+  }
+}
+
 /* ── Toast notifications (patient live updates; ADR-0021) ─────────────────── */
 .toast-region {
   position: fixed;

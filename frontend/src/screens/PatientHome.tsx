@@ -1,5 +1,6 @@
 import { FormEvent, JSX, useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import StatusStepper from '../components/StatusStepper';
 import { ApiError, api, MyConsultation, Priority } from '../lib/api';
 import { usePatientStateNotifications } from '../lib/patientNotifications';
 import { usePatientUpdates } from '../lib/realtime';
@@ -177,42 +178,32 @@ export default function PatientHome(): JSX.Element {
         {mine.length === 0 ? (
           <p className="muted">No consultations yet.</p>
         ) : (
-          <table>
-            <thead>
-              <tr>
-                <th>State</th>
-                <th>Priority</th>
-                <th>Queue</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {mine.map((c) => (
-                <tr key={c.id}>
-                  <td>{c.state}</td>
-                  <td className={`tier-${c.priority}`}>{c.priority}</td>
-                  <td>
-                    {c.state === 'QUEUED' && c.position !== null
-                      ? `${c.position} ahead of you`
-                      : '—'}
-                  </td>
-                  <td className="inline">
-                    {OPEN_ROOM_STATES.has(c.state) && (
-                      <Link to={`/consultations/${c.id}`}>Open room</Link>
-                    )}
-                    {c.summaryAvailable && (
-                      <Link to={`/consultations/${c.id}/summary`}>View summary</Link>
-                    )}
-                    {CANCELLABLE.has(c.state) && (
-                      <button className="link-btn" onClick={() => void cancel(c.id)}>
-                        Cancel
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <ul className="consult-list">
+            {mine.map((c) => (
+              <li key={c.id} className="consult-item">
+                <div className="consult-head">
+                  <span className={`tier-${c.priority}`}>{c.priority}</span>
+                  {c.state === 'QUEUED' && c.position !== null && (
+                    <span className="muted">{c.position} ahead of you</span>
+                  )}
+                </div>
+                <StatusStepper state={c.state} />
+                <div className="inline consult-actions">
+                  {OPEN_ROOM_STATES.has(c.state) && (
+                    <Link to={`/consultations/${c.id}`}>Open room</Link>
+                  )}
+                  {c.summaryAvailable && (
+                    <Link to={`/consultations/${c.id}/summary`}>View summary</Link>
+                  )}
+                  {CANCELLABLE.has(c.state) && (
+                    <button className="link-btn" onClick={() => void cancel(c.id)}>
+                      Cancel
+                    </button>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
         )}
       </div>
     </>

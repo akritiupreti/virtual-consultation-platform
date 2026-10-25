@@ -1,4 +1,4 @@
-import { FormEvent, JSX, useCallback, useEffect, useState } from 'react';
+import { FormEvent, JSX, useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import BackButton from '../components/BackButton';
 import { ApiError, api, ConsultationDetail, Message } from '../lib/api';
@@ -16,6 +16,11 @@ export default function ConsultationRoom(): JSX.Element {
   const [text, setText] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
+  // Draft autosave status (the draft persists on its own — there is no Save button).
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  // The last value successfully persisted, so we neither re-save an unchanged draft
+  // nor re-persist the draft we just loaded from the server.
+  const lastSaved = useRef('');
 
   const isClinician = user?.role === 'NURSE' || user?.role === 'DOCTOR';
   const isDoctor = user?.role === 'DOCTOR';
@@ -55,15 +60,52 @@ export default function ConsultationRoom(): JSX.Element {
   }, [loadMessages]);
 
   // Prefill an existing draft for the clinician (ignore if none / not permitted).
+  // Record it as the last-saved value so autosave doesn't immediately re-persist it.
   useEffect(() => {
     if (!isClinician) {
       return;
     }
     api
       .getSummary(id)
-      .then((s) => setDraft(s.content))
+      .then((s) => {
+        setDraft(s.content);
+        lastSaved.current = s.content.trim();
+      })
       .catch(() => undefined);
   }, [id, isClinician]);
+
+  // Autosave the summary draft (replaces the old "Save draft" button): debounce
+  // edits by the assigned clinician and persist them. This is also what surfaces a
+  // nurse-run case on the doctor's sign-off dashboard — previously that needed an
+  // explicit save, so a nurse who forgot to click stranded the case.
+  useEffect(() => {
+    if (!detail || !user) {
+      return;
+    }
+    const assignedToMe = detail.claimedBy === user.id;
+    const editable =
+      assignedToMe &&
+      (detail.state === 'IN_SESSION' || detail.state === 'ENDED') &&
+      !detail.summaryFinalized;
+    const trimmed = draft.trim();
+    // Nothing to persist (empty), or unchanged since the last successful save.
+    if (!editable || !trimmed || trimmed === lastSaved.current) {
+      return;
+    }
+    setSaveState('saving');
+    const handle = window.setTimeout(() => {
+      void (async () => {
+        try {
+          await api.draftSummary(id, trimmed);
+          lastSaved.current = trimmed;
+          setSaveState('saved');
+        } catch {
+          setSaveState('error');
+        }
+      })();
+    }, 800);
+    return () => window.clearTimeout(handle);
+  }, [draft, detail, user, id]);
 
   async function act(fn: () => Promise<unknown>): Promise<void> {
     setError(null);
@@ -198,24 +240,22 @@ export default function ConsultationRoom(): JSX.Element {
             <div style={{ marginTop: 12 }}>
               <label htmlFor="draft">Summary draft</label>
               <textarea id="draft" value={draft} onChange={(e) => setDraft(e.target.value)} />
-              <div className="inline" style={{ marginTop: 8 }}>
-                <button
-                  className="secondary"
-                  disabled={!draft.trim()}
-                  onClick={() => void act(() => api.draftSummary(id, draft.trim()))}
-                >
-                  Save draft
-                </button>
+              <div className="inline" style={{ marginTop: 8, alignItems: 'center' }}>
                 {canFinalize && (
                   <button disabled={!draft.trim()} onClick={() => setConfirming(true)}>
                     Finalize &amp; sign off
                   </button>
                 )}
+                <span className="muted draft-status" aria-live="polite">
+                  {saveState === 'saving' && 'Saving…'}
+                  {saveState === 'saved' && 'Saved'}
+                  {saveState === 'error' && "Couldn't save your last change"}
+                </span>
               </div>
 
               {!isDoctor && detail.state === 'ENDED' && (
                 <p className="muted" style={{ marginTop: 8 }}>
-                  Draft saved. A doctor must sign off to finalize this summary.
+                  Changes are saved automatically. A doctor must sign off to finalize this summary.
                 </p>
               )}
             </div>

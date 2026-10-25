@@ -66,12 +66,15 @@ describe('ConsultationRoom screen', () => {
     expect(mock.start).toHaveBeenCalledWith('c-1');
   });
 
-  it('lets a clinician save a summary draft', async () => {
-    const { user, findByLabelText, getByRole } = render(fixtures.users.doctor);
+  it('autosaves the summary draft as the clinician types (no Save button)', async () => {
+    const { user, findByLabelText, queryByRole, findByText } = render(fixtures.users.doctor);
     const draft = await findByLabelText(/summary draft/i);
-    await user.type(draft, 'Draft note');
-    await user.click(getByRole('button', { name: /save draft/i }));
-    expect(mock.draftSummary).toHaveBeenCalled();
+    await user.type(draft, ' plus an edit');
+    // The manual "Save draft" button is gone — persistence is automatic.
+    expect(queryByRole('button', { name: /save draft/i })).not.toBeInTheDocument();
+    // The edit is persisted automatically (debounced) and the status reflects it.
+    await waitFor(() => expect(mock.draftSummary).toHaveBeenCalled(), { timeout: 2000 });
+    expect(await findByText(/saved/i)).toBeInTheDocument();
   });
 
   it('offers Finalize & sign off only to a doctor on an ENDED case', async () => {

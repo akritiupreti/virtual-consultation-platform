@@ -1,6 +1,7 @@
 import { FormEvent, JSX, useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ApiError, api, MyConsultation, Priority } from '../lib/api';
+import { usePatientStateNotifications } from '../lib/patientNotifications';
 import { usePatientUpdates } from '../lib/realtime';
 
 const CATEGORIES = [
@@ -40,6 +41,8 @@ export default function PatientHome(): JSX.Element {
 
   // Live position / state pushes (ADR-0009); slow interval is a fallback only.
   usePatientUpdates(refresh);
+  // Surface meaningful state changes (claim/start/end/finalize) as toasts (ADR-0021).
+  usePatientStateNotifications(mine);
   useEffect(() => {
     void refresh();
     const timer = setInterval(() => void refresh(), 20000);

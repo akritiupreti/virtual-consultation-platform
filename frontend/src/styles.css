@@ -512,6 +512,81 @@ pre {
   font-size: 0.85em;
 }
 
+/* ── Toast notifications (patient live updates; ADR-0021) ─────────────────── */
+.toast-region {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: min(360px, calc(100vw - 40px));
+  pointer-events: none;
+}
+
+.toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  /* --text on --surface is AA-tested (contrast.test.ts); the coloured accent is
+     a left border, so meaning never rests on colour alone — the text carries it. */
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--primary);
+  border-radius: 10px;
+  box-shadow: var(--shadow-lg);
+  font-size: 0.9rem;
+  pointer-events: auto;
+  animation: toast-in 0.18s ease;
+}
+
+.toast-success {
+  border-left-color: var(--ok-fg);
+}
+
+.toast-msg {
+  flex: 1;
+}
+
+.toast-close {
+  flex: none;
+  padding: 0 4px;
+  margin: -2px -4px 0 0;
+  background: none;
+  border: none;
+  box-shadow: none;
+  color: var(--muted);
+  font-size: 1.15rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.toast-close:hover {
+  filter: none;
+  color: var(--text);
+  box-shadow: none;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast {
+    animation: none;
+  }
+}
+
 @media (max-width: 640px) {
   .nav {
     flex-wrap: wrap;
@@ -523,5 +598,11 @@ pre {
   }
   .container {
     margin: 18px auto;
+  }
+  .toast-region {
+    left: 16px;
+    right: 16px;
+    bottom: 16px;
+    max-width: none;
   }
 }

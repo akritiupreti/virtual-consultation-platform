@@ -54,4 +54,21 @@ describe('App routing & RequireRole', () => {
     });
     expect(await findByText(fixtures.users.doctor.email)).toBeInTheDocument();
   });
+
+  it('bounces an already-authenticated user away from /login (Back-button fix)', async () => {
+    const { findByRole } = renderWithProviders(<App />, {
+      user: fixtures.users.patient,
+      route: '/login',
+    });
+    // Must land on their home, NOT render the login form alongside the nav bar.
+    expect(await findByRole('heading', { name: /my consultations/i })).toBeInTheDocument();
+  });
+
+  it('renders the admin user-management screen at /users', async () => {
+    const { findByRole } = renderWithProviders(<App />, {
+      user: fixtures.users.admin,
+      route: '/users',
+    });
+    expect(await findByRole('heading', { name: /user management/i })).toBeInTheDocument();
+  });
 });

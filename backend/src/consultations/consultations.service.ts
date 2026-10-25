@@ -50,6 +50,23 @@ export interface MyConsultationView {
   summaryAvailable: boolean;
 }
 
+/**
+ * A clinician's view of a case currently assigned to them (claimedBy = self).
+ * Enough to find the case again and jump back into its room or summary — not the
+ * full clinical narrative (invariant 6: minimise exposure in list views).
+ */
+export interface AssignedConsultationView {
+  id: string;
+  state: ConsultationState;
+  priority: Priority;
+  symptomCategory: string | null;
+  complaintSummary: string;
+  claimedAt: Date | null;
+  startedAt: Date | null;
+  endedAt: Date | null;
+  summaryFinalized: boolean;
+}
+
 /** Full participant view (owner or assigned clinician); includes intake. */
 export interface ConsultationView {
   id: string;
@@ -212,6 +229,36 @@ export class ConsultationsService {
       createdAt: row.createdAt,
       position: row.state === ConsultationState.QUEUED ? (positions?.get(row.id) ?? null) : null,
       summaryAvailable: row.summary?.finalizedAt != null,
+    }));
+  }
+
+  /**
+   * A clinician's own assigned cases (claimedBy = self), newest claim first, so
+   * they can return to a consultation — or its finalised summary — without the
+   * URL. Only cases still assigned to them appear; a reassigned case (claimedBy
+   * cleared, ADR-0012) drops off the list, as it is no longer theirs.
+   */
+  async getAssigned(user: ActingUser): Promise<AssignedConsultationView[]> {
+    const rows = await this.prisma.consultation.findMany({
+      where: { claimedBy: user.id },
+      orderBy: { claimedAt: 'desc' },
+      include: {
+        intake: { select: { symptomCategory: true, chiefComplaint: true } },
+        summary: { select: { finalizedAt: true } },
+      },
+    });
+
+    return rows.map((row) => ({
+      id: row.id,
+      state: row.state,
+      priority: row.priority,
+      symptomCategory: row.intake?.symptomCategory ?? null,
+      // A short complaint label only — not the full clinical narrative.
+      complaintSummary: (row.intake?.chiefComplaint ?? '').slice(0, 100),
+      claimedAt: row.claimedAt,
+      startedAt: row.startedAt,
+      endedAt: row.endedAt,
+      summaryFinalized: row.summary?.finalizedAt != null,
     }));
   }
 

@@ -1,5 +1,6 @@
 import { JSX, useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import BackButton from '../components/BackButton';
 import { ApiError, api, Summary } from '../lib/api';
 import { useAuth } from '../lib/auth';
 
@@ -35,6 +36,7 @@ export default function SummaryScreen(): JSX.Element {
   return (
     <>
       <div className="row">
+        <BackButton />
         <h1 style={{ marginRight: 12 }}>Clinical summary</h1>
         <Link to={`/consultations/${id}`}>Back to room</Link>
       </div>

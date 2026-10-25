@@ -5,6 +5,7 @@
  * suites render identical, deterministic content.
  */
 import type {
+  AssignedConsultation,
   AuditEntry,
   AuthUser,
   ConsultationDetail,
@@ -12,6 +13,7 @@ import type {
   MyConsultation,
   QueueItem,
   Summary,
+  UserAccount,
 } from '../lib/api';
 
 export const users: Record<string, AuthUser> = {
@@ -50,6 +52,31 @@ export const myConsultations: MyConsultation[] = [
     createdAt: '2026-10-22T09:00:00.000Z',
     position: 2,
     summaryAvailable: false,
+  },
+];
+
+export const assignedConsultations: AssignedConsultation[] = [
+  {
+    id: 'c-1',
+    state: 'ENDED',
+    priority: 'URGENT',
+    symptomCategory: 'Respiratory',
+    complaintSummary: 'Sample complaint (synthetic)',
+    claimedAt: '2026-10-22T09:02:00.000Z',
+    startedAt: '2026-10-22T09:03:00.000Z',
+    endedAt: '2026-10-22T09:20:00.000Z',
+    summaryFinalized: true,
+  },
+  {
+    id: 'c-2',
+    state: 'CLAIMED',
+    priority: 'ROUTINE',
+    symptomCategory: 'Dermatology',
+    complaintSummary: 'Another complaint (synthetic)',
+    claimedAt: '2026-10-22T09:30:00.000Z',
+    startedAt: null,
+    endedAt: null,
+    summaryFinalized: false,
   },
 ];
 
@@ -106,6 +133,30 @@ export function summary(overrides: Partial<Summary> = {}): Summary {
     ...overrides,
   };
 }
+
+export const userAccounts: UserAccount[] = [
+  {
+    id: 'u-admin',
+    email: 'admin@example.test',
+    role: 'ADMIN',
+    status: 'ACTIVE',
+    createdAt: '2026-10-20T08:00:00.000Z',
+  },
+  {
+    id: 'u-nurse',
+    email: 'nurse@example.test',
+    role: 'NURSE',
+    status: 'ACTIVE',
+    createdAt: '2026-10-20T08:05:00.000Z',
+  },
+  {
+    id: 'u-doctor',
+    email: 'doctor@example.test',
+    role: 'DOCTOR',
+    status: 'DEACTIVATED',
+    createdAt: '2026-10-20T08:10:00.000Z',
+  },
+];
 
 export const audit: AuditEntry[] = [
   {

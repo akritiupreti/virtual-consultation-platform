@@ -18,6 +18,7 @@ import { ActingUser } from '../common/authz/policy';
 import { Roles } from '../common/authz/roles.decorator';
 import { RolesGuard } from '../common/authz/roles.guard';
 import {
+  AssignedConsultationView,
   ConsultationsService,
   ConsultationView,
   MyConsultationView,
@@ -55,6 +56,12 @@ export class ConsultationsController {
   @Roles(Role.PATIENT)
   mine(@CurrentUser() user: AuthenticatedUser): Promise<MyConsultationView[]> {
     return this.consultations.getMine(acting(user));
+  }
+
+  @Get('assigned')
+  @Roles(Role.NURSE, Role.DOCTOR)
+  assigned(@CurrentUser() user: AuthenticatedUser): Promise<AssignedConsultationView[]> {
+    return this.consultations.getAssigned(acting(user));
   }
 
   @Get(':id')

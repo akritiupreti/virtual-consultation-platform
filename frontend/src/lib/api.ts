@@ -4,6 +4,7 @@ const BASE_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? 'http:/
 const TOKEN_KEY = 'vcp_token';
 
 export type Role = 'PATIENT' | 'NURSE' | 'DOCTOR' | 'ADMIN';
+export type UserStatus = 'ACTIVE' | 'DEACTIVATED';
 export type Priority = 'ROUTINE' | 'URGENT' | 'EMERGENCY';
 export type ConsultationState =
   'REQUESTED' | 'QUEUED' | 'CLAIMED' | 'IN_SESSION' | 'ENDED' | 'SUMMARIZED' | 'CANCELLED';
@@ -36,6 +37,19 @@ export interface MyConsultation {
   createdAt: string;
   position: number | null;
   summaryAvailable: boolean;
+}
+
+/** A clinician's view of a case assigned to them (see backend getAssigned). */
+export interface AssignedConsultation {
+  id: string;
+  state: ConsultationState;
+  priority: Priority;
+  symptomCategory: string | null;
+  complaintSummary: string;
+  claimedAt: string | null;
+  startedAt: string | null;
+  endedAt: string | null;
+  summaryFinalized: boolean;
 }
 
 export interface ConsultationDetail {
@@ -84,6 +98,23 @@ export interface AuditEntry {
   eventType: string;
   consultationId: string | null;
   metadata: unknown;
+  createdAt: string;
+}
+
+/** Admin audit read is paginated server-side (docs/api-spec.md). */
+export interface AuditPage {
+  items: AuditEntry[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+/** Account as returned by the admin user-management endpoints (never clinical content). */
+export interface UserAccount {
+  id: string;
+  email: string;
+  role: Role;
+  status: UserStatus;
   createdAt: string;
 }
 
@@ -170,6 +201,7 @@ export const api = {
   submitRequest: (input: SubmitRequestInput): Promise<MyConsultation> =>
     apiFetch('/consultations', body(input)),
   getMine: (): Promise<MyConsultation[]> => apiFetch('/consultations/mine'),
+  getAssigned: (): Promise<AssignedConsultation[]> => apiFetch('/consultations/assigned'),
   getQueue: (): Promise<QueueItem[]> => apiFetch('/consultations/queue'),
   getConsultation: (id: string): Promise<ConsultationDetail> => apiFetch(`/consultations/${id}`),
   claim: (id: string): Promise<ConsultationDetail> =>
@@ -196,5 +228,18 @@ export const api = {
     apiFetch(`/consultations/${id}/summary/finalize`, body({})),
   getSummary: (id: string): Promise<Summary> => apiFetch(`/consultations/${id}/summary`),
 
-  getAudit: (): Promise<AuditEntry[]> => apiFetch('/audit'),
+  // The server paginates the audit trail ({ items, total, limit, offset }); the
+  // UI only needs the most-recent page, so unwrap to the rows here. Stays tolerant
+  // of a bare array in case the endpoint is ever simplified.
+  getAudit: async (): Promise<AuditEntry[]> => {
+    const page = await apiFetch<AuditPage | AuditEntry[]>('/audit');
+    return Array.isArray(page) ? page : (page?.items ?? []);
+  },
+
+  // Admin user management (admin-only endpoints — no clinical content).
+  getUsers: (): Promise<UserAccount[]> => apiFetch('/users'),
+  deactivateUser: (id: string): Promise<UserAccount> =>
+    apiFetch(`/users/${id}/deactivate`, body({})),
+  reactivateUser: (id: string): Promise<UserAccount> =>
+    apiFetch(`/users/${id}/reactivate`, body({})),
 };

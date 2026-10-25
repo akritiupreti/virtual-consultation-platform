@@ -73,10 +73,49 @@ describe('ConsultationRoom screen', () => {
     expect(mock.draftSummary).toHaveBeenCalled();
   });
 
-  it('offers Finalize summary only to a doctor on an ENDED case', async () => {
+  it('offers Finalize & sign off only to a doctor on an ENDED case', async () => {
     mock.getConsultation.mockResolvedValue(fixtures.consultation({ state: 'ENDED' }));
     const { findByRole } = render(fixtures.users.doctor);
-    expect(await findByRole('button', { name: /finalize summary/i })).toBeInTheDocument();
+    expect(await findByRole('button', { name: /finalize & sign off/i })).toBeInTheDocument();
+  });
+
+  it('does not offer Finalize & sign off to a nurse on an ENDED case', async () => {
+    mock.getConsultation.mockResolvedValue(fixtures.consultation({ state: 'ENDED' }));
+    const { findByText, queryByRole } = render(fixtures.users.nurse);
+    // The nurse can still draft, but sign-off is doctor-only.
+    await findByText(/a doctor must sign off/i);
+    expect(queryByRole('button', { name: /finalize & sign off/i })).not.toBeInTheDocument();
+  });
+
+  it('finalizing saves the current draft then locks it, after confirmation', async () => {
+    mock.getConsultation.mockResolvedValue(fixtures.consultation({ state: 'ENDED' }));
+    mock.getSummary.mockResolvedValue(fixtures.summary({ finalized: false, content: '' }));
+    mock.draftSummary.mockResolvedValue(fixtures.summary({ finalized: false }));
+    mock.finalizeSummary.mockResolvedValue(fixtures.summary({ finalized: true }));
+    const { user, findByLabelText, findByRole, getByRole } = render(fixtures.users.doctor);
+
+    // Edit the draft, then sign off in one action (no separate "Save draft" click).
+    await user.type(await findByLabelText(/summary draft/i), 'Draft text');
+
+    // First click only asks for confirmation — nothing is persisted yet.
+    await user.click(await findByRole('button', { name: /finalize & sign off/i }));
+    expect(mock.finalizeSummary).not.toHaveBeenCalled();
+
+    // Confirming saves the editor content, then finalizes.
+    await user.click(getByRole('button', { name: /confirm & finalize/i }));
+    expect(mock.draftSummary).toHaveBeenCalledWith('c-1', 'Draft text');
+    expect(mock.finalizeSummary).toHaveBeenCalledWith('c-1');
+  });
+
+  it('cancels finalize without persisting anything', async () => {
+    mock.getConsultation.mockResolvedValue(fixtures.consultation({ state: 'ENDED' }));
+    mock.getSummary.mockResolvedValue(fixtures.summary({ finalized: false, content: '' }));
+    const { user, findByLabelText, getByRole, queryByRole } = render(fixtures.users.doctor);
+    await user.type(await findByLabelText(/summary draft/i), 'Draft text');
+    await user.click(getByRole('button', { name: /finalize & sign off/i }));
+    await user.click(getByRole('button', { name: /cancel/i }));
+    expect(mock.finalizeSummary).not.toHaveBeenCalled();
+    expect(queryByRole('button', { name: /confirm & finalize/i })).not.toBeInTheDocument();
   });
 
   it('does not show clinician controls to a patient', async () => {

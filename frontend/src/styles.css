@@ -613,7 +613,20 @@ pre {
 
 .is-current .stepper-dot {
   border-color: var(--primary);
-  box-shadow: var(--ring);
+  /* Pulsing halo draws the eye to where the consultation currently is. */
+  animation: stepper-pulse 2s ease-out infinite;
+}
+
+@keyframes stepper-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(31, 111, 235, 0.45);
+  }
+  70% {
+    box-shadow: 0 0 0 7px rgba(31, 111, 235, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(31, 111, 235, 0);
+  }
 }
 
 .stepper-label {
@@ -643,10 +656,63 @@ pre {
 
 @media (prefers-reduced-motion: reduce) {
   .is-current .stepper-dot {
+    animation: none;
     box-shadow: none;
     outline: 2px solid var(--primary);
     outline-offset: 1px;
   }
+}
+
+/* ── Link buttons (list actions styled as buttons, e.g. Open room) ─────────── */
+.btn-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--primary);
+  background: var(--primary);
+  color: var(--primary-ink);
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-decoration: none;
+  box-shadow: var(--shadow-sm);
+  transition:
+    filter 0.15s ease,
+    box-shadow 0.15s ease,
+    transform 0.05s ease,
+    background 0.15s ease;
+}
+
+.btn-link:hover {
+  filter: brightness(1.06);
+  box-shadow: var(--shadow-md);
+  color: var(--primary-ink);
+  text-decoration: none;
+}
+
+.btn-link:active {
+  transform: translateY(1px);
+}
+
+.btn-link:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
+/* Secondary action (e.g. View summary): outline, lower emphasis than Open room. */
+.btn-link.btn-outline {
+  background: transparent;
+  /* --primary-700 on surface is AA-tested (contrast.test.ts). */
+  color: var(--primary-700);
+  box-shadow: none;
+}
+
+.btn-link.btn-outline:hover {
+  filter: none;
+  background: var(--surface-2);
+  box-shadow: none;
+  color: var(--primary-700);
 }
 
 /* ── Toast notifications (patient live updates; ADR-0021) ─────────────────── */

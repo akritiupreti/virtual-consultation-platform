@@ -190,10 +190,14 @@ export default function PatientHome(): JSX.Element {
                 <StatusStepper state={c.state} />
                 <div className="inline consult-actions">
                   {OPEN_ROOM_STATES.has(c.state) && (
-                    <Link to={`/consultations/${c.id}`}>Open room</Link>
+                    <Link className="btn-link" to={`/consultations/${c.id}`}>
+                      Open room
+                    </Link>
                   )}
                   {c.summaryAvailable && (
-                    <Link to={`/consultations/${c.id}/summary`}>View summary</Link>
+                    <Link className="btn-link btn-outline" to={`/consultations/${c.id}/summary`}>
+                      View summary
+                    </Link>
                   )}
                   {CANCELLABLE.has(c.state) && (
                     <button className="link-btn" onClick={() => void cancel(c.id)}>

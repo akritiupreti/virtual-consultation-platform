@@ -58,18 +58,23 @@ sequenceDiagram
     participant N as Nurse
     participant D as Doctor
     Pt->>Pt: /patient — submit request (intake + consent)
-    Note over Pt: sees "N ahead" position, live
+    Note over Pt: status stepper + "N ahead" position, live
     N->>N: /queue — claim the case (DB-atomic)
+    Note over Pt: toast: "A clinician has picked up your consultation"
     N->>N: start → /consultations/:id
     Pt->>N: chat (persisted + live both ways)
-    N->>N: complete → draft summary
+    N->>N: complete → draft summary (autosaves; no Save button)
     D->>D: /consultations/:id/summary — finalize (doctor-only, immutable)
+    Note over Pt: toast + stepper → "Summary ready"
     Pt->>Pt: reads the finalized summary
 ```
 
 1. **Patient** — sign in as `patient@vcp.local` → land on `/patient`. Submit a request
    (chief complaint, symptom category, onset, severity, **consent checkbox**). **Look
-   for:** it immediately shows **Queued** with a live **"N ahead"** position.
+   for:** it immediately shows a **status stepper** (Requested → Queued → With clinician
+   → In session → Ended → Summary ready) with **Queued** as the current, pulsing step
+   and a live **"N ahead of you"** position (ADR-0023). Keep this patient window visible
+   for the rest of the lifecycle.
 2. **Nurse** — sign in as `nurse@vcp.local` → `/queue`. **Look for:** the queue shows
    only the **pre-claim minimum** (priority, symptom category, severity, a short
    complaint, wait time) — **no patient identity, no attachments** (data
@@ -77,16 +82,22 @@ sequenceDiagram
    queues instantly.
 3. **Nurse** — **Start** the consultation → `/consultations/:id` (state → In Session).
    Send a message. In the patient window, **look for** the message arriving **live**
-   (and vice-versa); the patient's position/status updates without a refresh.
-4. **Nurse** — **Complete** the consultation (→ Ended), then **draft** a summary.
-   **Look for:** the nurse can draft but the **Finalize** action is not available to
-   them.
-5. **Doctor** — sign in as `doctor@vcp.local`, open the case's summary
-   (`/consultations/:id/summary`) and **Finalize** (→ Summarized). **Look for:**
-   finalize is **doctor-only**, and once finalized the summary is **immutable** —
-   corrections would be append-only addendums.
-6. **Patient** — refresh `/patient`/the summary. **Look for:** the patient can now read
-   the **finalized** summary.
+   (and vice-versa); the stepper advances and a **toast** announces "A clinician has
+   picked up your consultation." / "Your consultation has started" **without a refresh**
+   (ADR-0021). The toast is also announced to screen readers (see §4).
+4. **Nurse** — **Complete** the consultation (→ Ended), then type a summary in the
+   **Summary draft** box. **Look for:** there is **no "Save draft" button** — the draft
+   **autosaves** (a small "Saving… / Saved" status appears as you type, ADR-0022), and
+   the **Finalize** action is not available to the nurse. In the patient window the
+   stepper moves to **Ended**.
+5. **Doctor** — sign in as `doctor@vcp.local`, open the case (it is now on the doctor's
+   **sign-off worklist** because the nurse's draft was autosaved — no forgotten click,
+   ADR-0022) and **Finalize & sign off** (→ Summarized). **Look for:** finalize is
+   **doctor-only**, and once finalized the summary is **immutable** — corrections would
+   be append-only addendums.
+6. **Patient** — no refresh needed. **Look for:** a toast announces "Your consultation
+   summary is ready to view", the stepper reaches **Summary ready**, and the **View
+   summary** action appears; opening it shows the **finalized** summary.
 
 ---
 
@@ -139,6 +150,16 @@ The guarantee lives in the **database**, not the UI (ADR-0003, invariant 2).
 - **Keyboard-only:** on Login, Triage Queue, Consultation Room and Summary, navigate
   with **Tab / Shift-Tab / Enter** only. **Look for:** visible focus, logical order,
   Enter submits.
+- **Live announcements (new):** with a screen reader on the patient's `/patient`, drive
+  a state change from another window (claim / start / finalize). **Look for:** each
+  change is **announced politely** via an app-root `aria-live` region — not only a
+  silent DOM change (ADR-0021). The autosave "Saving… / Saved" status in the
+  consultation room is an `aria-live` region too (ADR-0022).
+- **Status not by colour alone:** on the patient status stepper, **look for** the
+  current step marked with `aria-current="step"` and each step's done/upcoming state
+  exposed as visually-hidden text — meaning never rests on the colour or the tick icon
+  (WCAG 1.4.1, ADR-0023). The current-step pulse is disabled under
+  `prefers-reduced-motion`.
 - **Automated proof:**
 
   ```bash

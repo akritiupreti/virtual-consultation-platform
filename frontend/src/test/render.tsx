@@ -4,6 +4,7 @@ import type { ReactElement } from 'react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import type { AuthUser } from '../lib/api';
 import { AuthProvider } from '../lib/auth';
+import { NotificationProvider } from '../lib/notifications';
 
 interface Options {
   /** Seed an authenticated user (writes the same localStorage keys the app uses). */
@@ -37,7 +38,9 @@ export function renderWithProviders(ui: ReactElement, options: Options = {}): Re
       future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
     >
       <AuthProvider>
-        {path ? <Routes>{<Route path={path} element={ui} />}</Routes> : ui}
+        <NotificationProvider>
+          {path ? <Routes>{<Route path={path} element={ui} />}</Routes> : ui}
+        </NotificationProvider>
       </AuthProvider>
     </MemoryRouter>
   );

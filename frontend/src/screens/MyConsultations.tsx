@@ -57,9 +57,13 @@ export default function MyConsultations(): JSX.Element {
                   <td>{c.complaintSummary || '—'}</td>
                   <td>{c.state}</td>
                   <td className="inline">
-                    <Link to={`/consultations/${c.id}`}>Open room</Link>
+                    <Link className="btn-link" to={`/consultations/${c.id}`}>
+                      Open room
+                    </Link>
                     {c.summaryFinalized && (
-                      <Link to={`/consultations/${c.id}/summary`}>View summary</Link>
+                      <Link className="btn-link btn-outline" to={`/consultations/${c.id}/summary`}>
+                        View summary
+                      </Link>
                     )}
                   </td>
                 </tr>

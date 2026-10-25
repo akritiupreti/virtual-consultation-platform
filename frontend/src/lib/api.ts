@@ -39,6 +39,19 @@ export interface MyConsultation {
   summaryAvailable: boolean;
 }
 
+/** A clinician's view of a case assigned to them (see backend getAssigned). */
+export interface AssignedConsultation {
+  id: string;
+  state: ConsultationState;
+  priority: Priority;
+  symptomCategory: string | null;
+  complaintSummary: string;
+  claimedAt: string | null;
+  startedAt: string | null;
+  endedAt: string | null;
+  summaryFinalized: boolean;
+}
+
 export interface ConsultationDetail {
   id: string;
   state: ConsultationState;
@@ -188,6 +201,7 @@ export const api = {
   submitRequest: (input: SubmitRequestInput): Promise<MyConsultation> =>
     apiFetch('/consultations', body(input)),
   getMine: (): Promise<MyConsultation[]> => apiFetch('/consultations/mine'),
+  getAssigned: (): Promise<AssignedConsultation[]> => apiFetch('/consultations/assigned'),
   getQueue: (): Promise<QueueItem[]> => apiFetch('/consultations/queue'),
   getConsultation: (id: string): Promise<ConsultationDetail> => apiFetch(`/consultations/${id}`),
   claim: (id: string): Promise<ConsultationDetail> =>

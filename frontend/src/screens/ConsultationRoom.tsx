@@ -1,5 +1,6 @@
 import { FormEvent, JSX, useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import BackButton from '../components/BackButton';
 import { ApiError, api, ConsultationDetail, Message } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { PresenceParticipant, useConsultationRoom } from '../lib/realtime';
@@ -88,7 +89,14 @@ export default function ConsultationRoom(): JSX.Element {
   }
 
   if (!detail) {
-    return <p className="muted">{error ?? 'Loading…'}</p>;
+    return (
+      <>
+        <div className="row">
+          <BackButton />
+        </div>
+        <p className="muted">{error ?? 'Loading…'}</p>
+      </>
+    );
   }
 
   const inSession = detail.state === 'IN_SESSION';
@@ -98,6 +106,7 @@ export default function ConsultationRoom(): JSX.Element {
   return (
     <>
       <div className="row">
+        <BackButton />
         <h1 style={{ marginRight: 12 }}>Consultation</h1>
         <span className={`tier-${detail.priority}`}>{detail.priority}</span>
         <span className="badge" style={{ marginLeft: 8 }}>

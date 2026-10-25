@@ -1,11 +1,12 @@
 import { JSX } from 'react';
-import { NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { Link, NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { Role } from './lib/api';
 import { homePathFor, useAuth } from './lib/auth';
 import AdminAudit from './screens/AdminAudit';
 import AdminUsers from './screens/AdminUsers';
 import ConsultationRoom from './screens/ConsultationRoom';
 import Login from './screens/Login';
+import MyConsultations from './screens/MyConsultations';
 import PatientHome from './screens/PatientHome';
 import SummaryScreen from './screens/Summary';
 import TriageQueue from './screens/TriageQueue';
@@ -38,7 +39,10 @@ function NavLinks({ role }: { role: Role }): JSX.Element {
     role === 'PATIENT'
       ? [{ to: '/patient', label: 'My consultations' }]
       : role === 'NURSE' || role === 'DOCTOR'
-        ? [{ to: '/queue', label: 'Triage queue' }]
+        ? [
+            { to: '/queue', label: 'Triage queue' },
+            { to: '/assigned', label: 'My consultations' },
+          ]
         : [
             { to: '/users', label: 'Users' },
             { to: '/audit', label: 'Audit log' },
@@ -65,12 +69,12 @@ function NavBar(): JSX.Element | null {
   }
   return (
     <header className="nav">
-      <span className="brand">
+      <Link to={homePathFor(user.role)} className="brand" aria-label="Go to home">
         <span className="brand-mark" aria-hidden="true">
           ⊕
         </span>
         Virtual Consultation Platform
-      </span>
+      </Link>
       <span className={`badge badge-${user.role.toLowerCase()}`}>{user.role}</span>
       <NavLinks role={user.role} />
       <span className="spacer" />
@@ -112,6 +116,14 @@ export default function App(): JSX.Element {
             element={
               <RequireRole roles={['NURSE', 'DOCTOR']}>
                 <TriageQueue />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/assigned"
+            element={
+              <RequireRole roles={['NURSE', 'DOCTOR']}>
+                <MyConsultations />
               </RequireRole>
             }
           />

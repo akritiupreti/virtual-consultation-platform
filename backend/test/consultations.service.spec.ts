@@ -140,6 +140,44 @@ describe('ConsultationsService (unit)', () => {
     expect(view.position).toBe(3);
   });
 
+  it('getAssigned lists a clinician own cases newest-first with a trimmed complaint', async () => {
+    const { service, prisma } = build();
+    prisma.consultation.findMany.mockResolvedValue([
+      row({
+        id: 'c-2',
+        state: ConsultationState.ENDED,
+        claimedBy: 'doc',
+        claimedAt: new Date('2026-10-22T10:00:00Z'),
+        intake: { symptomCategory: 'RESPIRATORY', chiefComplaint: 'x'.repeat(150) },
+        summary: { finalizedAt: new Date() },
+      }),
+      row({
+        id: 'c-1',
+        state: ConsultationState.CLAIMED,
+        claimedBy: 'doc',
+        claimedAt: new Date('2026-10-22T09:00:00Z'),
+        intake: null,
+        summary: null,
+      }),
+    ]);
+    const assigned = await service.getAssigned(doctor);
+    expect(prisma.consultation.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { claimedBy: 'doc' }, orderBy: { claimedAt: 'desc' } }),
+    );
+    expect(assigned[0]).toMatchObject({
+      id: 'c-2',
+      summaryFinalized: true,
+      symptomCategory: 'RESPIRATORY',
+    });
+    expect(assigned[0].complaintSummary).toHaveLength(100); // narrative trimmed
+    expect(assigned[1]).toMatchObject({
+      id: 'c-1',
+      summaryFinalized: false,
+      symptomCategory: null,
+      complaintSummary: '',
+    });
+  });
+
   it('404s getOne for a missing consultation', async () => {
     const { service, prisma } = build();
     prisma.consultation.findUnique.mockResolvedValue(null);

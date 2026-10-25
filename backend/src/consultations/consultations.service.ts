@@ -67,6 +67,22 @@ export interface AssignedConsultationView {
   summaryFinalized: boolean;
 }
 
+/**
+ * A doctor's worklist row for a case awaiting sign-off: a nurse-run case left in
+ * ENDED with a drafted-but-unfinalized summary (no doctor participant). Enough to
+ * triage and open the case — never the summary text or full narrative (invariant
+ * 6: minimise exposure in list views; the doctor reads the detail/summary on open).
+ */
+export interface PendingSignoffView {
+  id: string;
+  priority: Priority;
+  symptomCategory: string | null;
+  complaintSummary: string;
+  endedAt: Date | null;
+  draftedBy: string;
+  draftedAt: Date | null;
+}
+
 /** Full participant view (owner or assigned clinician); includes intake. */
 export interface ConsultationView {
   id: string;
@@ -259,6 +275,43 @@ export class ConsultationsService {
       startedAt: row.startedAt,
       endedAt: row.endedAt,
       summaryFinalized: row.summary?.finalizedAt != null,
+    }));
+  }
+
+  /**
+   * A doctor's "pending sign-off" worklist: every case in ENDED that has a
+   * drafted-but-unfinalized summary. These are typically nurse-run cases with no
+   * doctor participant — the triage queue is QUEUED-only and `getAssigned` filters
+   * to the caller's own claims, so without this list a nurse-authored summary can
+   * never reach a doctor to be finalized. Oldest-ended first (longest waiting).
+   *
+   * Role is gated to DOCTOR by the controller + matrix; the rows carry minimal
+   * clinical detail only (no summary text), matching the pre-claim/assigned views.
+   */
+  async getPendingSignoff(): Promise<PendingSignoffView[]> {
+    const rows = await this.prisma.consultation.findMany({
+      where: {
+        state: ConsultationState.ENDED,
+        // `is` matches only consultations that HAVE a summary and it is unfinalized,
+        // so cases ended without any draft are excluded (nothing to sign off yet).
+        summary: { is: { finalizedAt: null } },
+      },
+      orderBy: { endedAt: 'asc' },
+      include: {
+        intake: { select: { symptomCategory: true, chiefComplaint: true } },
+        summary: { select: { draftedBy: true, createdAt: true } },
+      },
+    });
+
+    return rows.map((row) => ({
+      id: row.id,
+      priority: row.priority,
+      symptomCategory: row.intake?.symptomCategory ?? null,
+      // A short complaint label only — not the full clinical narrative.
+      complaintSummary: (row.intake?.chiefComplaint ?? '').slice(0, 100),
+      endedAt: row.endedAt,
+      draftedBy: row.summary?.draftedBy ?? '',
+      draftedAt: row.summary?.createdAt ?? null,
     }));
   }
 

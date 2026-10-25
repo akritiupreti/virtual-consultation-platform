@@ -22,6 +22,7 @@ import {
   ConsultationsService,
   ConsultationView,
   MyConsultationView,
+  PendingSignoffView,
   QueueItem,
 } from './consultations.service';
 import { SetPriorityDto } from './dto/set-priority.dto';
@@ -62,6 +63,14 @@ export class ConsultationsController {
   @Roles(Role.NURSE, Role.DOCTOR)
   assigned(@CurrentUser() user: AuthenticatedUser): Promise<AssignedConsultationView[]> {
     return this.consultations.getAssigned(acting(user));
+  }
+
+  // Doctor sign-off worklist: ENDED cases with a drafted-but-unfinalized summary
+  // (typically nurse-run). Declared before `:id` so the literal path is not an id.
+  @Get('pending-signoff')
+  @Roles(Role.DOCTOR)
+  pendingSignoff(): Promise<PendingSignoffView[]> {
+    return this.consultations.getPendingSignoff();
   }
 
   @Get(':id')

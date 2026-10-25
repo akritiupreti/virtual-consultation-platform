@@ -8,6 +8,7 @@ import ConsultationRoom from './screens/ConsultationRoom';
 import Login from './screens/Login';
 import MyConsultations from './screens/MyConsultations';
 import PatientHome from './screens/PatientHome';
+import PendingSignoff from './screens/PendingSignoff';
 import SummaryScreen from './screens/Summary';
 import TriageQueue from './screens/TriageQueue';
 
@@ -42,6 +43,8 @@ function NavLinks({ role }: { role: Role }): JSX.Element {
         ? [
             { to: '/queue', label: 'Triage queue' },
             { to: '/assigned', label: 'My consultations' },
+            // Doctor-only: cases (incl. nurse-run) awaiting a doctor's sign-off.
+            ...(role === 'DOCTOR' ? [{ to: '/pending-signoff', label: 'Pending sign-off' }] : []),
           ]
         : [
             { to: '/users', label: 'Users' },
@@ -124,6 +127,14 @@ export default function App(): JSX.Element {
             element={
               <RequireRole roles={['NURSE', 'DOCTOR']}>
                 <MyConsultations />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/pending-signoff"
+            element={
+              <RequireRole roles={['DOCTOR']}>
+                <PendingSignoff />
               </RequireRole>
             }
           />

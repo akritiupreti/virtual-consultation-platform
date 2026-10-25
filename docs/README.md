@@ -37,5 +37,5 @@ All design documentation for the Virtual Consultation Platform. Status legend:
 
 | Doc                                  | Purpose                                                                                | Status     |
 | ------------------------------------ | -------------------------------------------------------------------------------------- | ---------- |
-| [adr/](adr/)                         | Architecture Decision Records (template + 0001–0019; more added as decisions are made) | 🟡 ongoing |
+| [adr/](adr/)                         | Architecture Decision Records (template + 0001–0020; more added as decisions are made) | 🟡 ongoing |
 | [retrospective.md](retrospective.md) | End-of-project reflection: wrong assumptions, risks, lessons, redesigns                | ✅ Phase 7 |

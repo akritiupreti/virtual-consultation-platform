@@ -11,6 +11,7 @@ import type {
   ConsultationDetail,
   Message,
   MyConsultation,
+  PendingSignoff,
   QueueItem,
   Summary,
   UserAccount,
@@ -77,6 +78,27 @@ export const assignedConsultations: AssignedConsultation[] = [
     startedAt: null,
     endedAt: null,
     summaryFinalized: false,
+  },
+];
+
+export const pendingSignoff: PendingSignoff[] = [
+  {
+    id: 'c-1',
+    priority: 'URGENT',
+    symptomCategory: 'Respiratory',
+    complaintSummary: 'Sample complaint (synthetic)',
+    endedAt: '2026-10-22T09:20:00.000Z',
+    draftedBy: 'u-nurse',
+    draftedAt: '2026-10-22T09:22:00.000Z',
+  },
+  {
+    id: 'c-2',
+    priority: 'ROUTINE',
+    symptomCategory: 'Dermatology',
+    complaintSummary: 'Another complaint (synthetic)',
+    endedAt: '2026-10-22T09:40:00.000Z',
+    draftedBy: 'u-nurse',
+    draftedAt: '2026-10-22T09:41:00.000Z',
   },
 ];
 

@@ -240,4 +240,39 @@ describe('ConsultationsService (unit)', () => {
     expect(ids).toEqual([]);
     expect(realtime.notifyQueueChanged).not.toHaveBeenCalled();
   });
+
+  it('lists pending sign-off cases with minimal detail, oldest-ended first (no summary text)', async () => {
+    const { service, prisma } = build();
+    prisma.consultation.findMany.mockResolvedValue([
+      {
+        id: 'c-1',
+        priority: Priority.URGENT,
+        endedAt: new Date('2026-10-22T09:00:00Z'),
+        intake: { symptomCategory: 'RESPIRATORY', chiefComplaint: 'Cough and fever for two days' },
+        summary: { draftedBy: 'nurse-1', createdAt: new Date('2026-10-22T09:05:00Z') },
+      },
+    ]);
+    const rows = await service.getPendingSignoff();
+
+    // Query targets ENDED cases whose summary exists and is unfinalized.
+    expect(prisma.consultation.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { state: ConsultationState.ENDED, summary: { is: { finalizedAt: null } } },
+        orderBy: { endedAt: 'asc' },
+      }),
+    );
+    expect(rows).toEqual([
+      {
+        id: 'c-1',
+        priority: Priority.URGENT,
+        symptomCategory: 'RESPIRATORY',
+        complaintSummary: 'Cough and fever for two days',
+        endedAt: new Date('2026-10-22T09:00:00Z'),
+        draftedBy: 'nurse-1',
+        draftedAt: new Date('2026-10-22T09:05:00Z'),
+      },
+    ]);
+    // Minimal view must never carry the summary content.
+    expect(JSON.stringify(rows)).not.toContain('content');
+  });
 });

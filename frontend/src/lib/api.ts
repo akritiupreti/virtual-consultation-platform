@@ -52,6 +52,21 @@ export interface AssignedConsultation {
   summaryFinalized: boolean;
 }
 
+/**
+ * A doctor's "pending sign-off" worklist row — a case (typically nurse-run) left
+ * in ENDED with a drafted-but-unfinalized summary. Minimal detail only; the doctor
+ * opens the room to review the full narrative and finalize (see backend getPendingSignoff).
+ */
+export interface PendingSignoff {
+  id: string;
+  priority: Priority;
+  symptomCategory: string | null;
+  complaintSummary: string;
+  endedAt: string | null;
+  draftedBy: string;
+  draftedAt: string | null;
+}
+
 export interface ConsultationDetail {
   id: string;
   state: ConsultationState;
@@ -202,6 +217,7 @@ export const api = {
     apiFetch('/consultations', body(input)),
   getMine: (): Promise<MyConsultation[]> => apiFetch('/consultations/mine'),
   getAssigned: (): Promise<AssignedConsultation[]> => apiFetch('/consultations/assigned'),
+  getPendingSignoff: (): Promise<PendingSignoff[]> => apiFetch('/consultations/pending-signoff'),
   getQueue: (): Promise<QueueItem[]> => apiFetch('/consultations/queue'),
   getConsultation: (id: string): Promise<ConsultationDetail> => apiFetch(`/consultations/${id}`),
   claim: (id: string): Promise<ConsultationDetail> =>

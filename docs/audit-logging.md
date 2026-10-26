@@ -53,27 +53,28 @@ an admin can see _that_ a message was sent on a consultation, never _what_ it sa
 
 Defined in `backend/src/audit/audit-events.ts`; metadata is who/what/when only.
 
-| Event                     | Class         | Actor                       | Metadata (no clinical content)                                   |
-| ------------------------- | ------------- | --------------------------- | ---------------------------------------------------------------- |
-| `LOGIN_SUCCESS`           | security      | the user                    | `{ role }`                                                       |
-| `LOGIN_FAILURE`           | security      | user id if known, else none | `{ reason }` — reason code only, never the password/email        |
-| `USER_DEACTIVATED`        | security      | admin                       | `{ targetUserId, targetRole }`                                   |
-| `USER_REACTIVATED`        | security      | admin                       | `{ targetUserId, targetRole }`                                   |
-| `CONSULTATION_REQUESTED`  | state         | patient                     | `{ priority }`                                                   |
-| `CONSULTATION_ENQUEUED`   | state         | patient (system step)       | `{ from, to, priority }`                                         |
-| `CONSULTATION_CLAIMED`    | state         | clinician                   | —                                                                |
-| `CONSULTATION_REQUEUED`   | state         | system                      | `{ reason: 'start_ttl_expired', ttlSeconds, previousClaimedBy }` |
-| `CONSULTATION_REASSIGNED` | state         | system                      | `{ reason: 'clinician_deactivated', previousClaimedBy }`         |
-| `CONSULTATION_STARTED`    | state         | clinician                   | —                                                                |
-| `CONSULTATION_COMPLETED`  | state         | clinician                   | —                                                                |
-| `CONSULTATION_CANCELLED`  | state         | patient                     | —                                                                |
-| `PRIORITY_CHANGED`        | state         | clinician                   | `{ from, to }`                                                   |
-| `MESSAGE_SENT`            | clinical-sig. | sender                      | `{ senderRole }` — never the body                                |
-| `ATTACHMENT_UPLOADED`     | clinical-sig. | uploader                    | `{ attachmentId, mimeType, sizeBytes }` — never filename/bytes   |
-| `ATTACHMENT_ACCESSED`     | clinical-sig. | viewer                      | `{ attachmentId }`                                               |
-| `SUMMARY_DRAFTED`         | clinical-sig. | clinician                   | —                                                                |
-| `SUMMARY_FINALIZED`       | clinical-sig. | doctor                      | —                                                                |
-| `SUMMARY_ADDENDUM_ADDED`  | clinical-sig. | clinician                   | `{ summaryId }` — never the addendum text                        |
+| Event                       | Class         | Actor                       | Metadata (no clinical content)                                   |
+| --------------------------- | ------------- | --------------------------- | ---------------------------------------------------------------- |
+| `LOGIN_SUCCESS`             | security      | the user                    | `{ role }`                                                       |
+| `LOGIN_FAILURE`             | security      | user id if known, else none | `{ reason }` — reason code only, never the password/email        |
+| `USER_DEACTIVATED`          | security      | admin                       | `{ targetUserId, targetRole }`                                   |
+| `USER_REACTIVATED`          | security      | admin                       | `{ targetUserId, targetRole }`                                   |
+| `CONSULTATION_REQUESTED`    | state         | patient                     | `{ priority }`                                                   |
+| `CONSULTATION_ENQUEUED`     | state         | patient (system step)       | `{ from, to, priority }`                                         |
+| `CONSULTATION_CLAIMED`      | state         | clinician                   | —                                                                |
+| `CONSULTATION_REQUEUED`     | state         | system                      | `{ reason: 'start_ttl_expired', ttlSeconds, previousClaimedBy }` |
+| `CONSULTATION_REASSIGNED`   | state         | system                      | `{ reason: 'clinician_deactivated', previousClaimedBy }`         |
+| `CONSULTATION_STARTED`      | state         | clinician                   | —                                                                |
+| `CONSULTATION_COMPLETED`    | state         | clinician                   | —                                                                |
+| `CONSULTATION_CANCELLED`    | state         | patient                     | —                                                                |
+| `PRIORITY_CHANGED`          | state         | clinician                   | `{ from, to }`                                                   |
+| `MESSAGE_SENT`              | clinical-sig. | sender                      | `{ senderRole }` — never the body                                |
+| `ATTACHMENT_UPLOADED`       | clinical-sig. | uploader                    | `{ attachmentId, mimeType, sizeBytes }` — never filename/bytes   |
+| `ATTACHMENT_ACCESSED`       | clinical-sig. | viewer                      | `{ attachmentId }`                                               |
+| `SUMMARY_DRAFTED`           | clinical-sig. | clinician                   | —                                                                |
+| `SUMMARY_FINALIZED`         | clinical-sig. | doctor                      | —                                                                |
+| `SUMMARY_CHANGES_REQUESTED` | clinical-sig. | doctor                      | `{ draftedBy }` — never the review note                          |
+| `SUMMARY_ADDENDUM_ADDED`    | clinical-sig. | clinician                   | `{ summaryId }` — never the addendum text                        |
 
 ---
 

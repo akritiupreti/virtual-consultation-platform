@@ -41,6 +41,7 @@ Legend: ✅ allowed · ⚠️ allowed with guard · ❌ denied.
 | End consultation                   |   ❌    |  ⚠️   |   ⚠️   |  ❌   | `actor = claimed_by`, `state=IN_SESSION`                                                                      |
 | Draft summary                      |   ❌    |  ⚠️   |   ⚠️   |  ❌   | Assigned clinician                                                                                            |
 | Finalize summary                   |   ❌    |  ❌   |   ⚠️   |  ❌   | `role=DOCTOR`, `state=ENDED`                                                                                  |
+| Request summary changes            |   ❌    |  ❌   |   ⚠️   |  ❌   | `role=DOCTOR`, `state=ENDED`, draft not finalized; returns the draft to the drafter, case stays ENDED         |
 | Add summary addendum               |   ❌    |  ⚠️   |   ⚠️   |  ❌   | Clinician; `state=SUMMARIZED` (append-only)                                                                   |
 | View summary                       |   ⚠️    |  ⚠️   |   ⚠️   |  ❌   | Participant, **any doctor while `state=ENDED`** (sign-off), **or the finalizing doctor** (`finalizedBy=self`) |
 | View clinical content              |   ⚠️    |  ⚠️   |   ⚠️   |  ❌   | **Admin always denied**                                                                                       |
@@ -77,3 +78,10 @@ Legend: ✅ allowed · ⚠️ allowed with guard · ❌ denied.
    doctor, never any wider, and the summary only: the consultation **detail** stays
    participants-only after sign-off (rule 7 unchanged). Admin is never a doctor, so
    separation of duties is untouched ([ADR-0023](adr/0023-finalizing-doctor-summary-read.md)).
+9. **Request changes instead of finalizing.** A reviewing doctor may return a
+   drafted, unfinalized summary to the drafter rather than sign one they disagree
+   with (`REQUEST_SUMMARY_CHANGES`, doctor-only like finalize, gated to `ENDED` in
+   the service). No state change — the case stays `ENDED` so the assigned clinician
+   re-drafts and a doctor finalizes once satisfied. Audited as who/what/when (the
+   drafter who must act); the doctor's note is delivered to the drafter in real
+   time only, never persisted or logged (invariant 6, [ADR-0024](adr/0024-request-summary-changes.md)).

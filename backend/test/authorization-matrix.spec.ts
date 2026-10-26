@@ -15,6 +15,7 @@ const CLINICAL_ACTIONS = [
   Action.VIEW_ATTACHMENT,
   Action.DRAFT_SUMMARY,
   Action.FINALIZE_SUMMARY,
+  Action.REQUEST_SUMMARY_CHANGES,
   Action.ADD_ADDENDUM,
   Action.VIEW_SUMMARY,
 ];
@@ -38,6 +39,13 @@ describe('authorization matrix (role dimension)', () => {
     expect(can(Action.FINALIZE_SUMMARY, Role.DOCTOR)).toBe(true);
     expect(can(Action.FINALIZE_SUMMARY, Role.NURSE)).toBe(false);
     expect(can(Action.FINALIZE_SUMMARY, Role.PATIENT)).toBe(false);
+  });
+
+  it('requesting summary changes is doctor-only (ADR-0024)', () => {
+    expect(can(Action.REQUEST_SUMMARY_CHANGES, Role.DOCTOR)).toBe(true);
+    expect(can(Action.REQUEST_SUMMARY_CHANGES, Role.NURSE)).toBe(false);
+    expect(can(Action.REQUEST_SUMMARY_CHANGES, Role.PATIENT)).toBe(false);
+    expect(can(Action.REQUEST_SUMMARY_CHANGES, Role.ADMIN)).toBe(false);
   });
 
   it('admins can never read clinical content (separation of duties, SC-6)', () => {

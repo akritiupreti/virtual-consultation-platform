@@ -98,12 +98,13 @@ with a per-consultation count cap.
 
 ## Summary (clinical content — admin denied)
 
-| Method & path                              | Roles | Guard                                                                                 | Body                   | Success                      |
-| ------------------------------------------ | ----- | ------------------------------------------------------------------------------------- | ---------------------- | ---------------------------- |
-| `POST /consultations/:id/summary`          | N,D   | assigned · `state∈{IN_SESSION,ENDED}` · not finalized                                 | `{ content }` (1–8000) | `201` draft                  |
-| `POST /consultations/:id/summary/finalize` | D     | `state=ENDED` (any doctor, incl. nurse-run cases)                                     | —                      | `200` finalized → SUMMARIZED |
-| `POST /consultations/:id/summary/addendum` | N,D   | clinician · `state=SUMMARIZED`                                                        | `{ content }` (1–8000) | `201` summary + addenda      |
-| `GET /consultations/:id/summary`           | P,N,D | participant (patient only when finalized), _or_ doctor while `state=ENDED` (sign-off) | —                      | `200` summary + addenda      |
+| Method & path                                     | Roles | Guard                                                                                                             | Body                   | Success                      |
+| ------------------------------------------------- | ----- | ----------------------------------------------------------------------------------------------------------------- | ---------------------- | ---------------------------- |
+| `POST /consultations/:id/summary`                 | N,D   | assigned · `state∈{IN_SESSION,ENDED}` · not finalized                                                             | `{ content }` (1–8000) | `201` draft                  |
+| `POST /consultations/:id/summary/finalize`        | D     | `state=ENDED` (any doctor, incl. nurse-run cases)                                                                 | —                      | `200` finalized → SUMMARIZED |
+| `POST /consultations/:id/summary/request-changes` | D     | `state=ENDED` · draft not finalized (any doctor); returns draft to drafter, stays ENDED                           | `{ note? }` (1–2000)   | `200` draft (unchanged)      |
+| `POST /consultations/:id/summary/addendum`        | N,D   | clinician · `state=SUMMARIZED`                                                                                    | `{ content }` (1–8000) | `201` summary + addenda      |
+| `GET /consultations/:id/summary`                  | P,N,D | participant (patient only when finalized), _or_ doctor while `state=ENDED` (sign-off), _or_ the finalizing doctor | —                      | `200` summary + addenda      |
 
 A finalized summary is **immutable**; corrections are **append-only addendums**
 (FR-13, C5) — the summary content itself is never mutated. Attempting to re-draft a

@@ -9,6 +9,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { RealtimeService } from '../realtime/realtime.service';
 import { AddAddendumDto } from './dto/add-addendum.dto';
 import { DraftSummaryDto } from './dto/draft-summary.dto';
+import { RequestSummaryChangesDto } from './dto/request-summary-changes.dto';
 
 export interface AddendumView {
   id: string;
@@ -121,6 +122,55 @@ export class SummariesService {
       id: consultationId,
       patientId: consultation.patientId,
       state: ConsultationState.SUMMARIZED,
+    });
+
+    return this.toView(summary);
+  }
+
+  /**
+   * A reviewing doctor returns a drafted summary to the drafter to revise instead
+   * of finalizing one they disagree with (ADR-0024). Doctor-only (matrix), not
+   * tied to the assigned clinician — exactly like finalize, so it works on a
+   * nurse-run case. No state transition: the case stays ENDED so the assigned
+   * clinician can re-draft via DRAFT_SUMMARY, then a doctor finalizes.
+   *
+   * Audited as who/what/when — the drafter who must act — never the doctor's note,
+   * which is delivered to that drafter in real time only (invariant 6).
+   */
+  async requestChanges(
+    user: ActingUser,
+    consultationId: string,
+    dto: RequestSummaryChangesDto,
+  ): Promise<SummaryView> {
+    const consultation = await this.loadConsultationOr404(consultationId);
+    authorizeConsultationAction(user, consultation, Action.REQUEST_SUMMARY_CHANGES);
+
+    const summary = await this.prisma.summary.findUnique({ where: { consultationId } });
+    if (!summary) {
+      throw new ConflictException('There is no drafted summary to return for changes');
+    }
+    if (summary.finalizedAt) {
+      // Already signed and immutable — corrections go through an addendum (FR-13).
+      throw new SummaryFinalizedException();
+    }
+    if (consultation.state !== ConsultationState.ENDED) {
+      throw new ConflictException(
+        'Changes can only be requested while a case is awaiting sign-off',
+      );
+    }
+
+    await this.audit.record({
+      actorId: user.id,
+      eventType: AUDIT_EVENTS.SUMMARY_CHANGES_REQUESTED,
+      consultationId,
+      metadata: { draftedBy: summary.draftedBy },
+    });
+
+    // Nudge the drafting clinician to revise. The optional note travels here only
+    // (ephemeral, to their personal room) — never into the audit log (invariant 6).
+    this.realtime.notifySummaryChangesRequested(summary.draftedBy, {
+      consultationId,
+      note: dto.note,
     });
 
     return this.toView(summary);

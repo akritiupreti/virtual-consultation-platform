@@ -28,6 +28,7 @@ export enum Action {
   VIEW_ATTACHMENT = 'VIEW_ATTACHMENT',
   DRAFT_SUMMARY = 'DRAFT_SUMMARY',
   FINALIZE_SUMMARY = 'FINALIZE_SUMMARY',
+  REQUEST_SUMMARY_CHANGES = 'REQUEST_SUMMARY_CHANGES',
   ADD_ADDENDUM = 'ADD_ADDENDUM',
   VIEW_SUMMARY = 'VIEW_SUMMARY',
   VIEW_AUDIT_LOG = 'VIEW_AUDIT_LOG',
@@ -115,6 +116,13 @@ export const AUTHORIZATION_MATRIX: Record<Action, Permission> = {
   // Finalize is doctor-only and keyed to state=ENDED (transition registry). It is
   // NOT tied to the assigned clinician, so a doctor can finalize a case a nurse ran.
   [Action.FINALIZE_SUMMARY]: { roles: [Role.DOCTOR], ownership: Ownership.NONE },
+  // Request changes is the reviewing doctor's alternative to finalizing: instead of
+  // signing a draft they disagree with, they return it to the drafter to revise.
+  // Doctor-only and not participant-scoped, exactly like FINALIZE_SUMMARY (a doctor
+  // may request changes on a nurse-run case). The state gate (ENDED, draft exists,
+  // not finalized) lives in the service; no state transition occurs — the case
+  // stays ENDED so the assigned clinician can re-draft (ADR-0024). Never admin.
+  [Action.REQUEST_SUMMARY_CHANGES]: { roles: [Role.DOCTOR], ownership: Ownership.NONE },
   // Append-only correction to a finalized (immutable) summary. Clinicians only;
   // the service gates it to state=SUMMARIZED (FR-13, C5). Never admin.
   [Action.ADD_ADDENDUM]: { roles: [Role.NURSE, Role.DOCTOR], ownership: Ownership.NONE },

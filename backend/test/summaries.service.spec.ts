@@ -29,7 +29,10 @@ const consultation = (state: ConsultationState) => ({
 
 function build(prisma: ReturnType<typeof makePrisma>) {
   const audit = { record: jest.fn().mockResolvedValue(undefined) };
-  const realtime = { broadcastConsultationUpdated: jest.fn() };
+  const realtime = {
+    broadcastConsultationUpdated: jest.fn(),
+    notifySummaryChangesRequested: jest.fn(),
+  };
   const service = new SummariesService(prisma as never, audit as never, realtime as never);
   return { service, audit, realtime };
 }
@@ -185,6 +188,78 @@ describe('SummariesService (unit)', () => {
     });
     const { service } = build(prisma);
     await expect(service.get(doctor, 'c-1')).rejects.toBeInstanceOf(ForbiddenActionException);
+  });
+
+  it('requests changes on an ENDED draft: audits and notifies the drafter (ADR-0024)', async () => {
+    const prisma = makePrisma();
+    prisma.consultation.findUnique.mockResolvedValue(consultation(ConsultationState.ENDED));
+    prisma.summary.findUnique.mockResolvedValue({
+      consultationId: 'c-1',
+      content: 'Likely viral URTI.',
+      draftedBy: 'nurse',
+      finalizedBy: null,
+      finalizedAt: null,
+    });
+    const { service, audit, realtime } = build(prisma);
+    const view = await service.requestChanges(doctor, 'c-1', {
+      note: 'Please add the BP reading.',
+    });
+
+    expect(view.finalized).toBe(false);
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: 'SUMMARY_CHANGES_REQUESTED',
+        actorId: 'doc',
+        metadata: { draftedBy: 'nurse' },
+      }),
+    );
+    // The drafter is notified; the note travels only in the realtime payload.
+    expect(realtime.notifySummaryChangesRequested).toHaveBeenCalledWith('nurse', {
+      consultationId: 'c-1',
+      note: 'Please add the BP reading.',
+    });
+    // The note is never written to the audit log (invariant 6).
+    expect(JSON.stringify(audit.record.mock.calls)).not.toContain('BP reading');
+  });
+
+  it('refuses to request changes when there is no drafted summary', async () => {
+    const prisma = makePrisma();
+    prisma.consultation.findUnique.mockResolvedValue(consultation(ConsultationState.ENDED));
+    prisma.summary.findUnique.mockResolvedValue(null);
+    const { service } = build(prisma);
+    await expect(service.requestChanges(doctor, 'c-1', {})).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+  });
+
+  it('refuses to request changes on an already-finalized summary', async () => {
+    const prisma = makePrisma();
+    prisma.consultation.findUnique.mockResolvedValue(consultation(ConsultationState.SUMMARIZED));
+    prisma.summary.findUnique.mockResolvedValue({ draftedBy: 'nurse', finalizedAt: new Date() });
+    const { service } = build(prisma);
+    await expect(service.requestChanges(doctor, 'c-1', {})).rejects.toBeInstanceOf(
+      SummaryFinalizedException,
+    );
+  });
+
+  it('refuses to request changes unless the case is awaiting sign-off (ENDED)', async () => {
+    const prisma = makePrisma();
+    prisma.consultation.findUnique.mockResolvedValue(consultation(ConsultationState.IN_SESSION));
+    prisma.summary.findUnique.mockResolvedValue({ draftedBy: 'nurse', finalizedAt: null });
+    const { service } = build(prisma);
+    await expect(service.requestChanges(doctor, 'c-1', {})).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+  });
+
+  it('forbids a nurse from requesting changes (doctor-only, ADR-0024)', async () => {
+    const prisma = makePrisma();
+    prisma.consultation.findUnique.mockResolvedValue(consultation(ConsultationState.ENDED));
+    const nurse = { id: 'nurse', role: Role.NURSE };
+    const { service } = build(prisma);
+    await expect(service.requestChanges(nurse, 'c-1', {})).rejects.toBeInstanceOf(
+      ForbiddenActionException,
+    );
   });
 
   it('adds an append-only addendum to a finalized summary', async () => {

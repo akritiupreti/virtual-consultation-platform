@@ -24,6 +24,11 @@ export const WS_EVENTS = {
   CONSULTATION_UPDATED: 'consultation:updated',
   /** A new message in a consultation room (participants only). */
   MESSAGE_CREATED: 'message:created',
+  /**
+   * A reviewing doctor asked the drafter to revise a summary (ADR-0024). Delivered
+   * only to the drafter's personal room, so the optional note reaches no one else.
+   */
+  SUMMARY_CHANGES_REQUESTED: 'summary:changes-requested',
   /** A patient's live "N ahead" position changed. */
   POSITION_UPDATED: 'position:updated',
   /** Presence of a consultation's participants changed. */
@@ -62,6 +67,16 @@ export interface ConsultationUpdatedPayload {
 export interface MessageCreatedPayload {
   consultationId: string;
   message: { id: string; senderId: string; body: string; createdAt: string };
+}
+
+/**
+ * A reviewing doctor returned a drafted summary for revision (ADR-0024). Emitted
+ * only to the drafting clinician's personal room; the optional note is feedback for
+ * that one clinician and is not persisted anywhere.
+ */
+export interface SummaryChangesRequestedPayload {
+  consultationId: string;
+  note?: string;
 }
 
 export interface PositionUpdatedPayload {

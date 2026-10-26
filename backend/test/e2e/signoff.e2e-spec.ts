@@ -176,4 +176,143 @@ describe('doctor sign-off of a nurse-run case (e2e)', () => {
     expect(finalized?.metadata).toMatchObject({ draftedBy: nurse.id });
     expect(JSON.stringify(finalized?.metadata ?? {})).not.toContain('viral URTI');
   });
+
+  it('a doctor returns a draft for changes; the nurse revises and the doctor then finalizes', async () => {
+    // Patient submits intake.
+    const register = await request(server)
+      .post('/auth/register')
+      .send({ email: 'patient@test.local', password: 'Password123!' })
+      .expect(201);
+    const patientToken: string = register.body.accessToken;
+
+    const submit = await request(server)
+      .post('/consultations')
+      .set('Authorization', bearer(patientToken))
+      .send({
+        chiefComplaint: 'Persistent cough for two days',
+        symptomCategory: 'RESPIRATORY',
+        onsetDuration: '2 days',
+        severity: 3,
+        consent: true,
+      })
+      .expect(201);
+    const consultationId: string = submit.body.id;
+
+    // A nurse runs the case and drafts; a separate doctor reviews.
+    const nurse = await createUser(prisma, Role.NURSE, 'nurse@test.local');
+    await createUser(prisma, Role.DOCTOR, 'doctor@test.local');
+    const nurseToken = await login(app, 'nurse@test.local');
+    const doctorToken = await login(app, 'doctor@test.local');
+
+    await request(server)
+      .post(`/consultations/${consultationId}/claim`)
+      .set('Authorization', bearer(nurseToken))
+      .expect(200);
+    await request(server)
+      .post(`/consultations/${consultationId}/start`)
+      .set('Authorization', bearer(nurseToken))
+      .expect(200);
+    await request(server)
+      .post(`/consultations/${consultationId}/complete`)
+      .set('Authorization', bearer(nurseToken))
+      .expect(200);
+    await request(server)
+      .post(`/consultations/${consultationId}/summary`)
+      .set('Authorization', bearer(nurseToken))
+      .send({ content: 'Likely viral URTI.' })
+      .expect(201);
+
+    // The doctor disagrees and returns the draft for changes instead of signing it.
+    const requested = await request(server)
+      .post(`/consultations/${consultationId}/summary/request-changes`)
+      .set('Authorization', bearer(doctorToken))
+      .send({ note: 'Please add the recorded blood pressure.' })
+      .expect(200);
+    // The draft is untouched and still not finalized; no state transition happened.
+    expect(requested.body.finalized).toBe(false);
+    expect(requested.body.content).toBe('Likely viral URTI.');
+
+    // The case is still ENDED, so it remains on the sign-off worklist for later.
+    const stillPending = await request(server)
+      .get('/consultations/pending-signoff')
+      .set('Authorization', bearer(doctorToken))
+      .expect(200);
+    expect(stillPending.body).toHaveLength(1);
+
+    const doctorRow = await prisma.user.findUniqueOrThrow({
+      where: { email: 'doctor@test.local' },
+    });
+    // The request is audited (who/what/when + the drafter who must act) — never the note.
+    const changeEvent = await prisma.auditLog.findFirst({
+      where: { consultationId, eventType: 'SUMMARY_CHANGES_REQUESTED' },
+    });
+    expect(changeEvent?.actorId).toBe(doctorRow.id);
+    expect(changeEvent?.metadata).toMatchObject({ draftedBy: nurse.id });
+    expect(JSON.stringify(changeEvent?.metadata ?? {})).not.toContain('blood pressure');
+
+    // The assigned nurse revises the draft (still allowed in ENDED).
+    const revised = await request(server)
+      .post(`/consultations/${consultationId}/summary`)
+      .set('Authorization', bearer(nurseToken))
+      .send({ content: 'Likely viral URTI. BP 120/80 recorded.' })
+      .expect(201);
+    expect(revised.body.content).toContain('BP 120/80');
+
+    // The doctor is now satisfied and finalizes: ENDED → SUMMARIZED.
+    const finalize = await request(server)
+      .post(`/consultations/${consultationId}/summary/finalize`)
+      .set('Authorization', bearer(doctorToken))
+      .expect(200);
+    expect(finalize.body.finalized).toBe(true);
+    expect(finalize.body.content).toContain('BP 120/80');
+  });
+
+  it('a nurse cannot request changes — finalize/return is doctor-only (ADR-0024)', async () => {
+    const register = await request(server)
+      .post('/auth/register')
+      .send({ email: 'patient@test.local', password: 'Password123!' })
+      .expect(201);
+    const patientToken: string = register.body.accessToken;
+
+    const submit = await request(server)
+      .post('/consultations')
+      .set('Authorization', bearer(patientToken))
+      .send({
+        chiefComplaint: 'Persistent cough for two days',
+        symptomCategory: 'RESPIRATORY',
+        onsetDuration: '2 days',
+        severity: 3,
+        consent: true,
+      })
+      .expect(201);
+    const consultationId: string = submit.body.id;
+
+    await createUser(prisma, Role.NURSE, 'nurse@test.local');
+    const nurseToken = await login(app, 'nurse@test.local');
+
+    await request(server)
+      .post(`/consultations/${consultationId}/claim`)
+      .set('Authorization', bearer(nurseToken))
+      .expect(200);
+    await request(server)
+      .post(`/consultations/${consultationId}/start`)
+      .set('Authorization', bearer(nurseToken))
+      .expect(200);
+    await request(server)
+      .post(`/consultations/${consultationId}/complete`)
+      .set('Authorization', bearer(nurseToken))
+      .expect(200);
+    await request(server)
+      .post(`/consultations/${consultationId}/summary`)
+      .set('Authorization', bearer(nurseToken))
+      .send({ content: 'Likely viral URTI.' })
+      .expect(201);
+
+    // The drafting nurse cannot request changes on their own draft — role gate (403).
+    await request(server)
+      .post(`/consultations/${consultationId}/summary/request-changes`)
+      .set('Authorization', bearer(nurseToken))
+      .send({ note: 'self-review' })
+      .expect(403);
+  });
 });

@@ -38,6 +38,10 @@ export const AUDIT_EVENTS = {
   ATTACHMENT_ACCESSED: 'ATTACHMENT_ACCESSED',
   SUMMARY_DRAFTED: 'SUMMARY_DRAFTED',
   SUMMARY_FINALIZED: 'SUMMARY_FINALIZED',
+  // A reviewing doctor returned a drafted summary to the drafter to revise instead
+  // of finalizing it (ADR-0024). Metadata records the drafter who must act; the
+  // doctor's review note is never persisted here (invariant 6).
+  SUMMARY_CHANGES_REQUESTED: 'SUMMARY_CHANGES_REQUESTED',
   // Append-only correction to a finalized summary (FR-13, C5).
   SUMMARY_ADDENDUM_ADDED: 'SUMMARY_ADDENDUM_ADDED',
 } as const;

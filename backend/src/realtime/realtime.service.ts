@@ -9,6 +9,7 @@ import {
   PositionUpdatedPayload,
   QUEUE_ROOM,
   QueueChangeReason,
+  SummaryChangesRequestedPayload,
   userRoom,
   WS_EVENTS,
 } from './events';
@@ -56,6 +57,16 @@ export class RealtimeService {
     this.server
       ?.to(consultationRoom(payload.consultationId))
       .emit(WS_EVENTS.MESSAGE_CREATED, payload);
+  }
+
+  /**
+   * A reviewing doctor asked the drafter to revise a summary (ADR-0024). Sent only
+   * to the drafting clinician's personal room so the optional note reaches no one
+   * else, and so it arrives even though a sign-off doctor is not in the room. A
+   * no-op when no socket server is attached.
+   */
+  notifySummaryChangesRequested(draftedBy: string, payload: SummaryChangesRequestedPayload): void {
+    this.server?.to(userRoom(draftedBy)).emit(WS_EVENTS.SUMMARY_CHANGES_REQUESTED, payload);
   }
 
   /**

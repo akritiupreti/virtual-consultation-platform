@@ -13,6 +13,7 @@ const CLINICAL_ACTIONS = [
   Action.READ_MESSAGES,
   Action.UPLOAD_ATTACHMENT,
   Action.VIEW_ATTACHMENT,
+  Action.DELETE_ATTACHMENT,
   Action.DRAFT_SUMMARY,
   Action.FINALIZE_SUMMARY,
   Action.REQUEST_SUMMARY_CHANGES,
@@ -74,6 +75,13 @@ describe('authorization matrix (role dimension)', () => {
       expect(can(action, Role.NURSE)).toBe(true);
       expect(can(action, Role.DOCTOR)).toBe(true);
       expect(can(action, Role.ADMIN)).toBe(false);
+    }
+  });
+
+  it('only a patient may remove an attachment (their own mistake, ADR-0028)', () => {
+    expect(can(Action.DELETE_ATTACHMENT, Role.PATIENT)).toBe(true);
+    for (const role of [Role.NURSE, Role.DOCTOR, Role.ADMIN]) {
+      expect(can(Action.DELETE_ATTACHMENT, role)).toBe(false);
     }
   });
 

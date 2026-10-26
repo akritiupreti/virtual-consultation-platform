@@ -1,5 +1,13 @@
-import { createContext, ReactNode, useCallback, useContext, useMemo, useState } from 'react';
-import { api, AuthUser, getToken, setToken } from './api';
+import {
+  createContext,
+  ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
+import { api, AuthUser, getToken, setToken, setUnauthorizedHandler } from './api';
 import { disconnectRealtime } from './realtime';
 
 const USER_KEY = 'vcp_user';
@@ -11,6 +19,35 @@ function loadUser(): AuthUser | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * True when the stored JWT's `exp` claim is in the past. Only the expiry is read —
+ * the signature is the server's to check — so a stale token left in storage does
+ * not render a signed-in shell whose every request will 401.
+ */
+export function isTokenExpired(token: string, now = Date.now()): boolean {
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))) as {
+      exp?: number;
+    };
+    return typeof payload.exp === 'number' && payload.exp * 1000 <= now;
+  } catch {
+    // Not a JWT we can read; let the server decide.
+    return false;
+  }
+}
+
+function initialUser(): AuthUser | null {
+  const token = getToken();
+  if (!token) {
+    return null;
+  }
+  if (isTokenExpired(token)) {
+    setToken(null);
+    return null;
+  }
+  return loadUser();
 }
 
 function storeUser(user: AuthUser | null): void {
@@ -27,6 +64,8 @@ function storeUser(user: AuthUser | null): void {
 
 interface AuthContextValue {
   user: AuthUser | null;
+  /** Why the user was signed out, shown on the login screen (e.g. session expired). */
+  signOutReason: string | null;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string) => Promise<void>;
   logout: () => void;
@@ -35,12 +74,14 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }): JSX.Element {
-  const [user, setUser] = useState<AuthUser | null>(() => (getToken() ? loadUser() : null));
+  const [user, setUser] = useState<AuthUser | null>(initialUser);
+  const [signOutReason, setSignOutReason] = useState<string | null>(null);
 
   const apply = useCallback((token: string, nextUser: AuthUser) => {
     setToken(token);
     storeUser(nextUser);
     setUser(nextUser);
+    setSignOutReason(null);
   }, []);
 
   const login = useCallback(
@@ -66,7 +107,21 @@ export function AuthProvider({ children }: { children: ReactNode }): JSX.Element
     setUser(null);
   }, []);
 
-  const value = useMemo(() => ({ user, login, register, logout }), [user, login, register, logout]);
+  // An authenticated request that comes back 401 means the session ended (JWT
+  // expiry, or the account was deactivated): sign out and say why, instead of
+  // leaving a signed-in shell where every action fails.
+  useEffect(() => {
+    setUnauthorizedHandler(() => {
+      logout();
+      setSignOutReason('Your session has ended. Please log in again.');
+    });
+    return () => setUnauthorizedHandler(null);
+  }, [logout]);
+
+  const value = useMemo(
+    () => ({ user, signOutReason, login, register, logout }),
+    [user, signOutReason, login, register, logout],
+  );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

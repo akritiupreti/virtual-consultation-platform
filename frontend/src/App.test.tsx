@@ -18,6 +18,8 @@ vi.mock('./lib/realtime', () => ({
   usePatientUpdates: () => undefined,
   useConsultationRoom: () => undefined,
   useSummaryChangeRequests: () => undefined,
+  useSummaryUpdates: () => undefined,
+  useAssignedUpdates: () => undefined,
   disconnectRealtime: () => undefined,
 }));
 
@@ -70,6 +72,6 @@ describe('App routing & RequireRole', () => {
       user: fixtures.users.admin,
       route: '/users',
     });
-    expect(await findByRole('heading', { name: /user management/i })).toBeInTheDocument();
+    expect(await findByRole('heading', { name: /^users$/i })).toBeInTheDocument();
   });
 });

@@ -106,6 +106,8 @@ It is encoded by omission in the [authorization matrix](authorization-matrix.md)
 | T9  | **Oversized/malformed payloads**          | Large JSON bodies, unknown fields                                              | Body-size cap; `ValidationPipe` (whitelist, `forbidNonWhitelisted`); `helmet` headers                                                          | Implemented |
 | T10 | **Lost/forged claim under concurrency**   | Two clinicians claim at once; forged state change                              | DB-atomic conditional update ([ADR-0003](adr/0003-claim-concurrency.md)); exactly one winner (SC-2)                                            | Implemented |
 | T11 | **Tampered real-time events**             | Spoofed WS payloads granting access                                            | Events are **signals**, not authority; clients reconcile from REST/DB; rooms gated by the matrix                                               | Implemented |
+| T12 | **Over-broad real-time fan-out**          | A draft or note pushed to someone who may not read it (e.g. the patient)       | Summary/attachment signals carry ids only; `signoff`/`user:` rooms joined server-side from the JWT; never sent to the patient (ADR-0027)       | Implemented |
+| T13 | **Expired session left open**             | A tab keeps a signed-in UI after the short-lived JWT expires                   | Expired tokens are not restored on load; any `401` signs the user out and says why — the server already rejects the token                      | Implemented |
 
 ---
 

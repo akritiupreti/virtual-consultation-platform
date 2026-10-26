@@ -10,6 +10,7 @@ function base(state: MyConsultation['state']): MyConsultation {
     state,
     priority: 'ROUTINE',
     createdAt: '2026-10-22T09:00:00.000Z',
+    complaintSummary: 'Sample complaint (synthetic)',
     position: 0,
     summaryAvailable: state === 'SUMMARIZED',
   };

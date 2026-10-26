@@ -36,6 +36,8 @@ export const AUDIT_EVENTS = {
   ATTACHMENT_UPLOADED: 'ATTACHMENT_UPLOADED',
   // A participant minted a signed URL / downloaded an attachment (FR-5, C4).
   ATTACHMENT_ACCESSED: 'ATTACHMENT_ACCESSED',
+  // The patient removed a file they shared by mistake, during the session (ADR-0028).
+  ATTACHMENT_DELETED: 'ATTACHMENT_DELETED',
   SUMMARY_DRAFTED: 'SUMMARY_DRAFTED',
   SUMMARY_FINALIZED: 'SUMMARY_FINALIZED',
   // A reviewing doctor returned a drafted summary to the drafter to revise instead

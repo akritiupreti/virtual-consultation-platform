@@ -1,14 +1,34 @@
+import { act } from '@testing-library/react';
 import { axe } from 'jest-axe';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fixtures from '../test/fixtures';
 import { renderWithProviders } from '../test/render';
 import PendingSignoff from './PendingSignoff';
 
-const mock = vi.hoisted(() => ({ getPendingSignoff: vi.fn() }));
+const mock = vi.hoisted(() => ({ getPendingSignoff: vi.fn(), getSignedOff: vi.fn() }));
+
+const signedOff = [
+  {
+    id: 'c-9',
+    priority: 'ROUTINE' as const,
+    symptomCategory: 'Dermatology',
+    complaintSummary: 'Signed complaint (synthetic)',
+    endedAt: '2026-10-21T09:00:00.000Z',
+    finalizedAt: '2026-10-21T09:30:00.000Z',
+    draftedBy: 'u-nurse',
+  },
+];
 vi.mock('../lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../lib/api')>();
   return { ...actual, api: { ...actual.api, ...mock } };
 });
+// Capture the live signal handler (ADR-0027) so a test can play a server push.
+const live = vi.hoisted(() => ({ summary: null as null | (() => void) }));
+vi.mock('../lib/realtime', () => ({
+  useSummaryUpdates: (cb: () => void) => {
+    live.summary = cb;
+  },
+}));
 
 function render() {
   return renderWithProviders(<PendingSignoff />, {
@@ -18,7 +38,38 @@ function render() {
 }
 
 describe('PendingSignoff (doctor)', () => {
-  beforeEach(() => mock.getPendingSignoff.mockReset());
+  beforeEach(() => {
+    mock.getPendingSignoff.mockReset();
+    mock.getSignedOff.mockReset().mockResolvedValue([]);
+  });
+
+  it("keeps the doctor's completed sign-offs under Completed, linking to the summary (ADR-0029)", async () => {
+    mock.getPendingSignoff.mockResolvedValue(fixtures.pendingSignoff);
+    mock.getSignedOff.mockResolvedValue(signedOff);
+    const { user, findAllByRole, getByRole, getAllByRole, getByText, queryByText } = render();
+
+    // Active (default): only cases awaiting sign-off.
+    expect(await findAllByRole('link', { name: /review & sign off/i })).toHaveLength(2);
+    expect(queryByText('Signed complaint (synthetic)')).not.toBeInTheDocument();
+
+    await user.click(getByRole('button', { name: /completed/i }));
+    expect(getByText('Signed complaint (synthetic)')).toBeInTheDocument();
+    expect(getByText('Signed off')).toBeInTheDocument();
+    expect(getByRole('link', { name: /view summary/i })).toHaveAttribute(
+      'href',
+      '/consultations/c-9/summary',
+    );
+
+    await user.click(getByRole('button', { name: /^all/i }));
+    expect(getAllByRole('link', { name: /review & sign off|view summary/i })).toHaveLength(3);
+  });
+
+  it('shows an empty Completed list before any sign-off', async () => {
+    mock.getPendingSignoff.mockResolvedValue([]);
+    const { user, findByRole, findByText } = render();
+    await user.click(await findByRole('button', { name: /completed/i }));
+    expect(await findByText(/not signed off any consultations yet/i)).toBeInTheDocument();
+  });
 
   it('lists cases awaiting sign-off, each linking to the room to review & finalize', async () => {
     mock.getPendingSignoff.mockResolvedValue(fixtures.pendingSignoff);
@@ -28,6 +79,23 @@ describe('PendingSignoff (doctor)', () => {
     expect(links).toHaveLength(2);
     expect(links[0]).toHaveAttribute('href', '/consultations/c-1');
     expect(links[1]).toHaveAttribute('href', '/consultations/c-2');
+  });
+
+  it('marks a case already returned to the drafter, apart from ones ready to review', async () => {
+    mock.getPendingSignoff.mockResolvedValue(fixtures.pendingSignoff);
+    const { findByText, getByText } = render();
+    expect(await findByText('Returned to drafter')).toBeInTheDocument();
+    expect(getByText('Ready to review')).toBeInTheDocument();
+    expect(document.querySelector('.header-stat')).toHaveTextContent('1 ready to review');
+  });
+
+  it('refreshes live when a summary signal arrives (no polling wait)', async () => {
+    mock.getPendingSignoff.mockResolvedValue([]);
+    const { findByText, findAllByRole } = render();
+    await findByText(/no consultations are awaiting sign-off/i);
+    mock.getPendingSignoff.mockResolvedValue(fixtures.pendingSignoff);
+    await act(async () => live.summary?.());
+    expect(await findAllByRole('link', { name: /review & sign off/i })).toHaveLength(2);
   });
 
   it('shows an empty state when nothing is awaiting sign-off', async () => {

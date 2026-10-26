@@ -1,6 +1,7 @@
 /** Thin typed client over the backend REST API (docs/api-spec.md). */
 
-const BASE_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:3000';
+export const BASE_URL =
+  (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:3000';
 const TOKEN_KEY = 'vcp_token';
 
 export type Role = 'PATIENT' | 'NURSE' | 'DOCTOR' | 'ADMIN';
@@ -35,6 +36,8 @@ export interface MyConsultation {
   state: ConsultationState;
   priority: Priority;
   createdAt: string;
+  /** A short label of the patient's own chief complaint. */
+  complaintSummary: string;
   position: number | null;
   summaryAvailable: boolean;
 }
@@ -49,6 +52,8 @@ export interface AssignedConsultation {
   claimedAt: string | null;
   startedAt: string | null;
   endedAt: string | null;
+  /** A draft exists; an ENDED case without one cannot reach a doctor's sign-off. */
+  summaryDrafted: boolean;
   summaryFinalized: boolean;
   /** A doctor returned the draft for revision and the drafter has not re-saved yet (ADR-0025). */
   summaryChangesRequested: boolean;
@@ -67,6 +72,19 @@ export interface PendingSignoff {
   endedAt: string | null;
   draftedBy: string;
   draftedAt: string | null;
+  /** Already returned to the drafter, who has not revised it yet (ADR-0025). */
+  changesRequested: boolean;
+}
+
+/** A case the calling doctor signed off — their own review history (ADR-0029). */
+export interface SignedOff {
+  id: string;
+  priority: Priority;
+  symptomCategory: string | null;
+  complaintSummary: string;
+  endedAt: string | null;
+  finalizedAt: string | null;
+  draftedBy: string;
 }
 
 export interface ConsultationDetail {
@@ -110,6 +128,27 @@ export interface Summary {
   /** Set while a doctor's revision request is outstanding; the note is their feedback (ADR-0025). */
   changesRequestedAt: string | null;
   changesRequestedNote: string | null;
+  /** Append-only corrections to a finalized summary, oldest first (FR-13). */
+  addenda?: Addendum[];
+}
+
+export interface Addendum {
+  id: string;
+  authorId: string;
+  content: string;
+  createdAt: string;
+}
+
+/** A file shared in a consultation; `downloadUrl` is short-lived and user-scoped (ADR-0007). */
+export interface Attachment {
+  id: string;
+  filename: string;
+  mimeType: string;
+  sizeBytes: number;
+  uploadedBy: string;
+  createdAt: string;
+  downloadUrl: string;
+  expiresAt: string;
 }
 
 export interface AuditEntry {
@@ -119,6 +158,17 @@ export interface AuditEntry {
   consultationId: string | null;
   metadata: unknown;
   createdAt: string;
+}
+
+/** Optional filters for the admin audit query (docs/api-spec.md). */
+export interface AuditQuery {
+  eventType?: string;
+  actorId?: string;
+  consultationId?: string;
+  from?: string;
+  to?: string;
+  limit?: number;
+  offset?: number;
 }
 
 /** Admin audit read is paginated server-side (docs/api-spec.md). */
@@ -147,6 +197,17 @@ export interface SubmitRequestInput {
   priority?: Priority;
   history?: string;
   medications?: string;
+}
+
+/**
+ * Called when an authenticated request comes back 401 — the JWT expired or the
+ * account was deactivated. The auth layer registers a handler that signs the user
+ * out, so the app never sits "logged in" while every call fails.
+ */
+let unauthorizedHandler: (() => void) | null = null;
+
+export function setUnauthorizedHandler(handler: (() => void) | null): void {
+  unauthorizedHandler = handler;
 }
 
 export class ApiError extends Error {
@@ -180,7 +241,9 @@ export function setToken(token: string | null): void {
 }
 
 async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  // A multipart body sets its own boundary header, so only JSON gets the type.
+  const headers: Record<string, string> =
+    init.body instanceof FormData ? {} : { 'Content-Type': 'application/json' };
   const token = getToken();
   if (token) {
     headers.Authorization = `Bearer ${token}`;
@@ -200,6 +263,11 @@ async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
       }
     } catch {
       /* non-JSON error body */
+    }
+    // Only a request that carried a token can have an expired session; a failed
+    // login is a plain 401 the login form shows itself.
+    if (res.status === 401 && token) {
+      unauthorizedHandler?.();
     }
     throw new ApiError(res.status, message);
   }
@@ -223,6 +291,7 @@ export const api = {
   getMine: (): Promise<MyConsultation[]> => apiFetch('/consultations/mine'),
   getAssigned: (): Promise<AssignedConsultation[]> => apiFetch('/consultations/assigned'),
   getPendingSignoff: (): Promise<PendingSignoff[]> => apiFetch('/consultations/pending-signoff'),
+  getSignedOff: (): Promise<SignedOff[]> => apiFetch('/consultations/signed-off'),
   getQueue: (): Promise<QueueItem[]> => apiFetch('/consultations/queue'),
   getConsultation: (id: string): Promise<ConsultationDetail> => apiFetch(`/consultations/${id}`),
   claim: (id: string): Promise<ConsultationDetail> =>
@@ -252,13 +321,31 @@ export const api = {
   requestSummaryChanges: (id: string, note?: string): Promise<Summary> =>
     apiFetch(`/consultations/${id}/summary/request-changes`, body(note ? { note } : {})),
   getSummary: (id: string): Promise<Summary> => apiFetch(`/consultations/${id}/summary`),
+  addAddendum: (id: string, content: string): Promise<Summary> =>
+    apiFetch(`/consultations/${id}/summary/addendum`, body({ content })),
 
-  // The server paginates the audit trail ({ items, total, limit, offset }); the
-  // UI only needs the most-recent page, so unwrap to the rows here. Stays tolerant
-  // of a bare array in case the endpoint is ever simplified.
-  getAudit: async (): Promise<AuditEntry[]> => {
-    const page = await apiFetch<AuditPage | AuditEntry[]>('/audit');
-    return Array.isArray(page) ? page : (page?.items ?? []);
+  getAttachments: (id: string): Promise<Attachment[]> =>
+    apiFetch(`/consultations/${id}/attachments`),
+  uploadAttachment: (id: string, file: File): Promise<Attachment> => {
+    const form = new FormData();
+    form.append('file', file);
+    return apiFetch(`/consultations/${id}/attachments`, { method: 'POST', body: form });
+  },
+  // The patient takes back a file shared by mistake, while in session (ADR-0028).
+  deleteAttachment: (id: string, attachmentId: string): Promise<void> =>
+    apiFetch(`/consultations/${id}/attachments/${attachmentId}`, { method: 'DELETE' }),
+
+  // The server paginates and filters the audit trail ({ items, total, limit, offset }).
+  // Empty filters are dropped so they never reach the query string as blanks.
+  getAudit: (query: AuditQuery = {}): Promise<AuditPage> => {
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(query)) {
+      if (value !== undefined && value !== '') {
+        params.set(key, String(value));
+      }
+    }
+    const qs = params.toString();
+    return apiFetch(`/audit${qs ? `?${qs}` : ''}`);
   },
 
   // Admin user management (admin-only endpoints — no clinical content).
@@ -268,3 +355,8 @@ export const api = {
   reactivateUser: (id: string): Promise<UserAccount> =>
     apiFetch(`/users/${id}/reactivate`, body({})),
 };
+
+/** Absolute URL for an attachment's signed, relative download path. */
+export function attachmentHref(attachment: Pick<Attachment, 'downloadUrl'>): string {
+  return `${BASE_URL}${attachment.downloadUrl}`;
+}

@@ -32,6 +32,7 @@ function build(prisma: ReturnType<typeof makePrisma>) {
   const realtime = {
     broadcastConsultationUpdated: jest.fn(),
     notifySummaryChangesRequested: jest.fn(),
+    notifySummaryUpdated: jest.fn(),
   };
   const service = new SummariesService(prisma as never, audit as never, realtime as never);
   return { service, audit, realtime };
@@ -58,10 +59,16 @@ describe('SummariesService (unit)', () => {
       finalizedBy: null,
       finalizedAt: null,
     });
-    const { service, audit } = build(prisma);
+    const { service, audit, realtime } = build(prisma);
     const view = await service.draft(doctor, 'c-1', { content: 'note' });
     expect(view.finalized).toBe(false);
     expect(audit.record).toHaveBeenCalled();
+    // A reviewing doctor's open copy reconciles live; the signal carries no text.
+    expect(realtime.notifySummaryUpdated).toHaveBeenCalledWith({
+      consultationId: 'c-1',
+      claimedBy: 'doc',
+      reason: 'drafted',
+    });
   });
 
   it('refuses to re-draft a finalized summary', async () => {
@@ -127,6 +134,10 @@ describe('SummariesService (unit)', () => {
     expect(view.finalized).toBe(true);
     expect(audit.record).toHaveBeenCalled();
     expect(realtime.broadcastConsultationUpdated).toHaveBeenCalled();
+    // The sign-off worklist and the drafter's list reconcile live (ADR-0027).
+    expect(realtime.notifySummaryUpdated).toHaveBeenCalledWith(
+      expect.objectContaining({ consultationId: 'c-1', reason: 'finalized' }),
+    );
   });
 
   it('hides a draft summary from the patient until finalized', async () => {
@@ -237,6 +248,14 @@ describe('SummariesService (unit)', () => {
       consultationId: 'c-1',
       note: 'Please add the BP reading.',
     });
+    // The durable marker reconciles live for the drafter and every doctor, as a
+    // content-free signal (ADR-0027) — the note never rides it.
+    expect(realtime.notifySummaryUpdated).toHaveBeenCalledWith({
+      consultationId: 'c-1',
+      claimedBy: expect.anything(),
+      reason: 'changes_requested',
+    });
+    expect(JSON.stringify(realtime.notifySummaryUpdated.mock.calls)).not.toContain('BP reading');
     // The note is never written to the audit log (invariant 6).
     expect(JSON.stringify(audit.record.mock.calls)).not.toContain('BP reading');
   });

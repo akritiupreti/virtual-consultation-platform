@@ -3,13 +3,17 @@ import { ConsultationState } from '@prisma/client';
 import type { Server } from 'socket.io';
 import { PrismaService } from '../prisma/prisma.service';
 import {
+  AttachmentCreatedPayload,
   consultationRoom,
   ConsultationUpdatedPayload,
   MessageCreatedPayload,
   PositionUpdatedPayload,
   QUEUE_ROOM,
   QueueChangeReason,
+  SIGNOFF_ROOM,
   SummaryChangesRequestedPayload,
+  SummaryUpdatedPayload,
+  SummaryUpdateReason,
   userRoom,
   WS_EVENTS,
 } from './events';
@@ -70,23 +74,63 @@ export class RealtimeService {
   }
 
   /**
+   * A consultation's summary changed, or a case entered the sign-off window
+   * (ADR-0027). Sent to the assigned clinician's personal room (their "My
+   * consultations" list and open editor) and to the doctors' sign-off room (the
+   * worklist and any open review), never to the patient — a draft is not theirs to
+   * see. The payload is an id + reason only; recipients reconcile via REST.
+   */
+  notifySummaryUpdated(update: {
+    consultationId: string;
+    claimedBy: string | null;
+    reason: SummaryUpdateReason;
+  }): void {
+    const payload: SummaryUpdatedPayload = {
+      consultationId: update.consultationId,
+      reason: update.reason,
+    };
+    // One emit across both rooms so a doctor who is also the assignee gets it once.
+    const rooms = update.claimedBy ? [SIGNOFF_ROOM, userRoom(update.claimedBy)] : [SIGNOFF_ROOM];
+    this.server?.to(rooms).emit(WS_EVENTS.SUMMARY_UPDATED, payload);
+  }
+
+  /** A file was attached; room members re-fetch the (authorized) attachment list. */
+  notifyAttachmentCreated(consultationId: string): void {
+    const payload: AttachmentCreatedPayload = { consultationId };
+    this.server?.to(consultationRoom(consultationId)).emit(WS_EVENTS.ATTACHMENT_CREATED, payload);
+  }
+
+  /** A file was removed; room members re-fetch the list (content-free, ADR-0028). */
+  notifyAttachmentRemoved(consultationId: string): void {
+    const payload: AttachmentCreatedPayload = { consultationId };
+    this.server?.to(consultationRoom(consultationId)).emit(WS_EVENTS.ATTACHMENT_REMOVED, payload);
+  }
+
+  /**
    * A consultation's state changed. Emitted to the consultation room (both
-   * participants) and to the patient's personal room so their status view
-   * reconciles even when they are not inside the room.
+   * participants), to the patient's personal room so their status view reconciles
+   * even when they are not inside the room, and to the assigned clinician's
+   * personal room so their "My consultations" list does too (ADR-0027). The
+   * payload is an id + state, which every recipient may already see.
    */
   broadcastConsultationUpdated(consultation: {
     id: string;
     patientId: string;
     state: ConsultationState;
+    /** The clinician the case is (or was, before a requeue) assigned to. */
+    claimedBy?: string | null;
   }): void {
     const payload: ConsultationUpdatedPayload = {
       consultationId: consultation.id,
       state: consultation.state,
     };
-    this.server
-      ?.to(consultationRoom(consultation.id))
-      .emit(WS_EVENTS.CONSULTATION_UPDATED, payload);
-    this.server?.to(userRoom(consultation.patientId)).emit(WS_EVENTS.CONSULTATION_UPDATED, payload);
+    const rooms = [consultationRoom(consultation.id), userRoom(consultation.patientId)];
+    if (consultation.claimedBy) {
+      rooms.push(userRoom(consultation.claimedBy));
+    }
+    // A single emit to several rooms delivers once per socket, so a clinician who
+    // is both in the room and in their personal room is not notified twice.
+    this.server?.to(rooms).emit(WS_EVENTS.CONSULTATION_UPDATED, payload);
   }
 
   /**

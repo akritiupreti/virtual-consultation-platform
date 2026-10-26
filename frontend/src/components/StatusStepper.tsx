@@ -13,7 +13,7 @@ import { ConsultationState } from '../lib/api';
  *
  * Accessibility: an ordered list labelled "Consultation progress"; the active
  * step carries `aria-current="step"`, and each step's done/upcoming status is
- * given to assistive tech as visually-hidden text (the tick glyph is decorative
+ * given to assistive tech as visually-hidden text (the tick icon is decorative
  * and `aria-hidden`), so meaning never rests on colour or the icon alone.
  */
 interface Step {
@@ -34,15 +34,28 @@ export default function StatusStepper({ state }: { state: ConsultationState }): 
   if (state === 'CANCELLED') {
     return (
       <p className="stepper-cancelled">
-        <span className="stepper-cancelled-mark" aria-hidden="true">
-          ✕
-        </span>
+        <svg
+          className="stepper-cancelled-mark"
+          viewBox="0 0 16 16"
+          width="14"
+          height="14"
+          aria-hidden="true"
+        >
+          <path
+            d="M4 4l8 8M12 4l-8 8"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+          />
+        </svg>
         Consultation cancelled
       </p>
     );
   }
 
   const currentIndex = STEPS.findIndex((s) => s.state === state);
+  // The last step is an end state, not work in progress: show it as complete.
+  const finished = currentIndex === STEPS.length - 1;
 
   return (
     <ol className="stepper" aria-label="Consultation progress">
@@ -51,11 +64,22 @@ export default function StatusStepper({ state }: { state: ConsultationState }): 
         return (
           <li
             key={step.state}
-            className={`stepper-step is-${status}`}
+            className={`stepper-step is-${status}${finished && status === 'current' ? ' is-final' : ''}`}
             aria-current={status === 'current' ? 'step' : undefined}
           >
             <span className="stepper-dot" aria-hidden="true">
-              {status === 'done' ? '✓' : ''}
+              {(status === 'done' || (finished && status === 'current')) && (
+                <svg viewBox="0 0 16 16" width="12" height="12">
+                  <path
+                    d="M3.5 8.5l3 3 6-7"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              )}
             </span>
             <span className="stepper-label">{step.label}</span>
             {status === 'done' && <span className="sr-only"> (completed)</span>}

@@ -33,11 +33,13 @@ Legend: ✅ allowed · ⚠️ allowed with guard · ❌ denied.
 | View triage queue                  |   ❌    |  ✅   |   ✅   |  ❌   | —                                                                                                             |
 | View pre-claim case info (minimal) |   ❌    |  ✅   |   ✅   |  ❌   | Minimal fields only                                                                                           |
 | View pending sign-off worklist     |   ❌    |  ❌   |   ✅   |  ❌   | ENDED + drafted-unfinalized; minimal fields                                                                   |
+| View own sign-off history          |   ❌    |  ❌   |   ⚠️   |  ❌   | Own sign-offs only (`finalizedBy=self`); minimal fields ([ADR-0029](adr/0029-doctor-signoff-history.md))      |
 | Claim case                         |   ❌    |  ⚠️   |   ⚠️   |  ❌   | `state=QUEUED`, under claim cap                                                                               |
 | Start consultation                 |   ❌    |  ⚠️   |   ⚠️   |  ❌   | `actor = claimed_by`, `state=CLAIMED`                                                                         |
 | Send / read messages               |   ⚠️    |  ⚠️   |   ⚠️   |  ❌   | Participant of that consultation                                                                              |
 | Upload attachment                  |   ⚠️    |  ⚠️   |   ⚠️   |  ❌   | Participant; `state=IN_SESSION`                                                                               |
 | View / download attachment         |   ⚠️    |  ⚠️   |   ⚠️   |  ❌   | Participant; short-lived user-scoped signed URL                                                               |
+| Remove attachment                  |   ⚠️    |  ❌   |   ❌   |  ❌   | Patient owner; **own upload**; `state=IN_SESSION` only ([ADR-0028](adr/0028-patient-attachment-removal.md))   |
 | End consultation                   |   ❌    |  ⚠️   |   ⚠️   |  ❌   | `actor = claimed_by`, `state=IN_SESSION`                                                                      |
 | Draft summary                      |   ❌    |  ⚠️   |   ⚠️   |  ❌   | Assigned clinician                                                                                            |
 | Finalize summary                   |   ❌    |  ❌   |   ⚠️   |  ❌   | `role=DOCTOR`, `state=ENDED`                                                                                  |
@@ -83,5 +85,15 @@ Legend: ✅ allowed · ⚠️ allowed with guard · ❌ denied.
    with (`REQUEST_SUMMARY_CHANGES`, doctor-only like finalize, gated to `ENDED` in
    the service). No state change — the case stays `ENDED` so the assigned clinician
    re-drafts and a doctor finalizes once satisfied. Audited as who/what/when (the
-   drafter who must act); the doctor's note is delivered to the drafter in real
-   time only, never persisted or logged (invariant 6, [ADR-0024](adr/0024-request-summary-changes.md)).
+   drafter who must act); the doctor's note is delivered to the drafter in real time
+   and kept on the summary as a durable "please revise" marker until they save a
+   revision — never written to the audit log or any log line (invariant 6,
+   [ADR-0024](adr/0024-request-summary-changes.md)/[0025](adr/0025-durable-changes-requested-indicator.md)).
+10. **Real-time rooms follow the same rules.** WebSocket room membership never
+    grants more than REST would: `queue` requires `VIEW_QUEUE`; `consultation:<id>`
+    runs `authorizeConsultationAction(VIEW_CONSULTATION)`; `user:<id>` and the
+    doctors' `signoff` room are joined by the server from the verified JWT. Events
+    in `user:<id>` and `signoff` are content-free signals (`summary:updated`,
+    `consultation:updated`) — clients re-read through REST, where this matrix applies
+    — and summary signals are never sent to the patient
+    ([ADR-0009](adr/0009-realtime-implementation.md), [ADR-0027](adr/0027-live-summary-and-signoff-signals.md)).

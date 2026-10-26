@@ -35,12 +35,14 @@ flowchart TB
 ## Functional requirements
 
 ### Accounts & auth
+
 - **FR-1** Users can register and log in. Each user has exactly one role:
   `PATIENT`, `NURSE`, `DOCTOR`, or `ADMIN`.
 - **FR-2** All actions are authenticated; authorization is enforced server-side
   per the [authorization matrix](authorization-matrix.md).
 
 ### Patient
+
 - **FR-3** A patient can submit a consultation request (intake schema below).
 - **FR-4** A patient sees their own position in the queue as a live count
   ("N requests ahead"), not an exact global rank.
@@ -50,6 +52,7 @@ flowchart TB
   patients, the triage queue, or other consultations.
 
 ### Clinician (nurse / doctor)
+
 - **FR-7** Clinicians see the live triage queue with the **minimum pre-claim
   information** (priority, symptom category, coarse demographics, wait time, short
   complaint) — not full identity or attachments.
@@ -67,12 +70,14 @@ flowchart TB
   it; a finalized summary is immutable (corrections are append-only addendums).
 
 ### Admin
+
 - **FR-14** An admin can manage users and deactivate accounts.
 - **FR-15** An admin can read the audit log of system activity.
 - **FR-16** An admin **cannot** read clinical consultation content (messages,
   attachments, summaries) — separation of duties.
 
 ### Workflow
+
 - **FR-17** Every consultation follows the [state machine](state-machine.md);
   only transitions valid for the actor's role and the current state are allowed.
 - **FR-18** The queue updates in real time on: enqueue, priority change, claim,
@@ -82,16 +87,20 @@ flowchart TB
 
 ## Intake schema — required vs optional
 
-| Field | Required? | Notes |
-|-------|-----------|-------|
-| Chief complaint | **Required** | Free text, bounded length |
-| Symptom category | **Required** | Controlled list |
-| Onset / duration | **Required** | e.g. "2 days" |
-| Severity (1–5) | **Required** | Self-reported |
-| Consent to process clinical data | **Required** | Must be explicitly granted |
-| Relevant history | Optional | Free text |
-| Current medications | Optional | Free text |
-| Attachments | Optional | JPEG/PNG/PDF, ≤10 MB each, max N files |
+| Field                            | Required?    | Notes                                  |
+| -------------------------------- | ------------ | -------------------------------------- |
+| Chief complaint                  | **Required** | Free text, bounded length              |
+| Symptom category                 | **Required** | Controlled list                        |
+| Onset / duration                 | **Required** | e.g. "2 days"                          |
+| Severity (1–5)                   | **Required** | Self-reported                          |
+| Consent to process clinical data | **Required** | Must be explicitly granted             |
+| Relevant history                 | Optional     | Free text                              |
+| Current medications              | Optional     | Free text                              |
+| Attachments                      | Optional     | JPEG/PNG/PDF, ≤10 MB each, max N files |
+
+Attachments are shared by either participant **in the consultation room during the
+session** (FR-5/FR-11), not on the intake form — so files only ever reach a clinician
+who has claimed the case (pre-claim minimization, FR-7).
 
 ## Priority & queue rules
 
@@ -99,7 +108,9 @@ flowchart TB
   adjustable by a triage nurse.
 - **FR-21** Queue order = priority tier first, then FIFO (`enqueuedAt`) within a tier.
 - **FR-22** Anti-starvation: a case waiting beyond a threshold is aged up a tier.
-  *(MVP ships tiers + FIFO; aging is a fast-follow.)*
+  _(**Deferred — not implemented.** The shipped queue is tiers + FIFO; clinicians
+  re-triage manually (FR-20) and the queue shows each case's wait time. Automatic
+  aging remains a follow-up.)_
 
 ## Account deactivation rules
 

@@ -24,6 +24,7 @@ import {
   MyConsultationView,
   PendingSignoffView,
   QueueItem,
+  SignedOffView,
 } from './consultations.service';
 import { SetPriorityDto } from './dto/set-priority.dto';
 import { SubmitRequestDto } from './dto/submit-request.dto';
@@ -71,6 +72,13 @@ export class ConsultationsController {
   @Roles(Role.DOCTOR)
   pendingSignoff(): Promise<PendingSignoffView[]> {
     return this.consultations.getPendingSignoff();
+  }
+
+  // The calling doctor's own completed sign-offs (ADR-0029). Before `:id` as above.
+  @Get('signed-off')
+  @Roles(Role.DOCTOR)
+  signedOff(@CurrentUser() user: AuthenticatedUser): Promise<SignedOffView[]> {
+    return this.consultations.getSignedOff(acting(user));
   }
 
   @Get(':id')

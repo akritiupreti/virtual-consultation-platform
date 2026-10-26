@@ -167,6 +167,28 @@ describe('doctor sign-off of a nurse-run case (e2e)', () => {
       .expect(200);
     expect(pendingAfter.body).toHaveLength(0);
 
+    // ...and is kept on the doctor's own sign-off history (ADR-0029), minimal fields
+    // only; another doctor's history does not include it.
+    const history = await request(server)
+      .get('/consultations/signed-off')
+      .set('Authorization', bearer(doctorToken))
+      .expect(200);
+    expect(history.body).toHaveLength(1);
+    expect(history.body[0]).toMatchObject({ id: consultationId, draftedBy: nurse.id });
+    expect(JSON.stringify(history.body)).not.toContain('viral URTI');
+    await createUser(prisma, Role.DOCTOR, 'doctor2@test.local');
+    const otherDoctorToken = await login(app, 'doctor2@test.local');
+    const otherDoctorHistory = await request(server)
+      .get('/consultations/signed-off')
+      .set('Authorization', bearer(otherDoctorToken))
+      .expect(200);
+    expect(otherDoctorHistory.body).toHaveLength(0);
+    // Doctor-only.
+    await request(server)
+      .get('/consultations/signed-off')
+      .set('Authorization', bearer(nurseToken))
+      .expect(403);
+
     // Sign-off is audited: finalizing doctor is the actor, nurse is recorded as drafter,
     // and no summary text leaks into the audit metadata.
     const finalized = await prisma.auditLog.findFirst({

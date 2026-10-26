@@ -1,7 +1,10 @@
 import {
   BadRequestException,
   Controller,
+  Delete,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   ParseUUIDPipe,
   Post,
@@ -71,6 +74,17 @@ export class ConsultationAttachmentsController {
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<AttachmentWithUrl[]> {
     return this.attachments.list(acting(user), id);
+  }
+
+  /** The patient removes a file they shared by mistake, during the session (ADR-0028). */
+  @Delete(':attachmentId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  remove(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('attachmentId', ParseUUIDPipe) attachmentId: string,
+  ): Promise<void> {
+    return this.attachments.remove(acting(user), id, attachmentId);
   }
 }
 

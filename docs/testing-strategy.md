@@ -58,26 +58,28 @@ flowchart TB
 These map directly to [success-criteria.md](success-criteria.md) and must always be
 covered regardless of the coverage percentage.
 
-| #     | Scenario                                                              | Where                                                    | Proves                   |
-| ----- | --------------------------------------------------------------------- | -------------------------------------------------------- | ------------------------ |
-| CS-1  | Full lifecycle Requested → Summarized                                 | `test/e2e/lifecycle.e2e-spec.ts`                         | SC-1 / FR-17             |
-| CS-2  | Contested claim → exactly one winner                                  | `test/e2e/claim-concurrency.e2e-spec.ts`                 | SC-2 / FR-9 / ADR-0003   |
-| CS-3  | Invalid transitions rejected (409)                                    | `transition-registry.spec.ts` + lifecycle e2e            | SC-5 / FR-17             |
-| CS-4  | Admin cannot read clinical content                                    | `test/e2e/rbac.e2e-spec.ts`                              | SC-6 / FR-16             |
-| CS-5  | No privilege escalation (role/ownership)                              | `authorization-matrix.spec.ts` + rbac e2e                | SC-7 / NFR-1             |
-| CS-6  | Doctor-only finalize; nurse denied                                    | lifecycle + rbac e2e                                     | FR-13                    |
-| CS-7  | Two subscribers see live queue/room updates                           | `test/e2e/realtime.e2e-spec.ts`                          | FR-18 / C18 / ADR-0005   |
-| CS-8  | Claimed-but-not-started auto-requeues + audited                       | `test/e2e/claim-ttl-requeue.e2e-spec.ts`                 | FR-12 / SC-4 / ADR-0010  |
-| CS-9  | WS connections authenticated; admin/non-participant refused rooms     | `test/e2e/realtime.e2e-spec.ts`                          | NFR-1 / invariants 3 & 4 |
-| CS-10 | Admin cannot read attachments; attachment access is membership-scoped | `test/e2e/rbac.e2e-spec.ts` + `attachments.e2e-spec.ts`  | SC-6 / SC-8 / FR-16      |
-| CS-11 | Signed-URL scoping + expiry + tamper enforced                         | `signed-url.service.spec.ts` + `attachments.e2e-spec.ts` | SC-8 / NFR-2 / ADR-0007  |
-| CS-12 | Upload type/size validation (magic-byte, 415/413/409)                 | `test/e2e/attachments.e2e-spec.ts`                       | NFR-1 / ADR-0007         |
-| CS-13 | Full privilege-escalation matrix (role × state × ownership)           | `authorization-matrix.spec.ts` + `rbac.e2e-spec.ts`      | SC-7 / NFR-1             |
-| CS-14 | Deactivation: no login, token rejected, mid-session reassign, audited | `test/e2e/deactivation.e2e-spec.ts`                      | FR-23/24/25 / ADR-0012   |
-| CS-15 | Admin audit query filters + paginates + excludes clinical content     | `test/e2e/audit-query.e2e-spec.ts`                       | FR-15 / SC-6             |
-| CS-16 | A request is traceable end-to-end by correlation ID                   | `test/e2e/observability.e2e-spec.ts`                     | SC-15 / ADR-0013         |
-| CS-17 | Readiness reflects dependencies (Postgres gates; Redis non-gating)    | `test/e2e/observability.e2e-spec.ts`                     | SC-15 / ADR-0004         |
-| CS-18 | No PII/clinical data (nor headers/query) ever reaches the logs        | `logging-redaction.spec.ts` + audit no-content (CS-15)   | SC-9 / NFR-2             |
+| #     | Scenario                                                              | Where                                                     | Proves                   |
+| ----- | --------------------------------------------------------------------- | --------------------------------------------------------- | ------------------------ |
+| CS-1  | Full lifecycle Requested → Summarized                                 | `test/e2e/lifecycle.e2e-spec.ts`                          | SC-1 / FR-17             |
+| CS-2  | Contested claim → exactly one winner                                  | `test/e2e/claim-concurrency.e2e-spec.ts`                  | SC-2 / FR-9 / ADR-0003   |
+| CS-3  | Invalid transitions rejected (409)                                    | `transition-registry.spec.ts` + lifecycle e2e             | SC-5 / FR-17             |
+| CS-4  | Admin cannot read clinical content                                    | `test/e2e/rbac.e2e-spec.ts`                               | SC-6 / FR-16             |
+| CS-5  | No privilege escalation (role/ownership)                              | `authorization-matrix.spec.ts` + rbac e2e                 | SC-7 / NFR-1             |
+| CS-6  | Doctor-only finalize; nurse denied                                    | lifecycle + rbac e2e                                      | FR-13                    |
+| CS-7  | Two subscribers see live queue/room updates                           | `test/e2e/realtime.e2e-spec.ts`                           | FR-18 / C18 / ADR-0005   |
+| CS-8  | Claimed-but-not-started auto-requeues + audited                       | `test/e2e/claim-ttl-requeue.e2e-spec.ts`                  | FR-12 / SC-4 / ADR-0010  |
+| CS-9  | WS connections authenticated; admin/non-participant refused rooms     | `test/e2e/realtime.e2e-spec.ts`                           | NFR-1 / invariants 3 & 4 |
+| CS-10 | Admin cannot read attachments; attachment access is membership-scoped | `test/e2e/rbac.e2e-spec.ts` + `attachments.e2e-spec.ts`   | SC-6 / SC-8 / FR-16      |
+| CS-11 | Signed-URL scoping + expiry + tamper enforced                         | `signed-url.service.spec.ts` + `attachments.e2e-spec.ts`  | SC-8 / NFR-2 / ADR-0007  |
+| CS-12 | Upload type/size validation (magic-byte, 415/413/409)                 | `test/e2e/attachments.e2e-spec.ts`                        | NFR-1 / ADR-0007         |
+| CS-13 | Full privilege-escalation matrix (role × state × ownership)           | `authorization-matrix.spec.ts` + `rbac.e2e-spec.ts`       | SC-7 / NFR-1             |
+| CS-14 | Deactivation: no login, token rejected, mid-session reassign, audited | `test/e2e/deactivation.e2e-spec.ts`                       | FR-23/24/25 / ADR-0012   |
+| CS-15 | Admin audit query filters + paginates + excludes clinical content     | `test/e2e/audit-query.e2e-spec.ts`                        | FR-15 / SC-6             |
+| CS-16 | A request is traceable end-to-end by correlation ID                   | `test/e2e/observability.e2e-spec.ts`                      | SC-15 / ADR-0013         |
+| CS-17 | Readiness reflects dependencies (Postgres gates; Redis non-gating)    | `test/e2e/observability.e2e-spec.ts`                      | SC-15 / ADR-0004         |
+| CS-18 | No PII/clinical data (nor headers/query) ever reaches the logs        | `logging-redaction.spec.ts` + audit no-content (CS-15)    | SC-9 / NFR-2             |
+| CS-19 | Summary hand-off is live, content-free, and never reaches the patient | `test/e2e/realtime.e2e-spec.ts` + room/worklist specs     | FR-13 / ADR-0026/0027    |
+| CS-20 | Patient removes only their own file, only during the session          | `attachments.e2e-spec.ts` + attachments/matrix unit specs | FR-5 / ADR-0028          |
 
 ### How the concurrency test proves correctness (CS-2)
 
@@ -100,6 +102,13 @@ clients**:
   and an admin are refused `subscribe:queue`; an admin and a non-participant
   clinician are refused `join:consultation` — the same boundaries as REST
   (invariants 3 & 4).
+- **CS-19 (live summary hand-off):** a nurse ends a case with a saved draft and a
+  doctor's socket — in no consultation room — receives `summary:updated` via the
+  `signoff` room; a change request reaches the nurse's personal room with **no note
+  text** in the signal; the nurse's revision reaches the doctor; the patient, joined
+  to the case room, receives **none** of these. The frontend specs prove the other
+  half: typing never saves (only **Save** does), a live signal never overwrites text
+  being edited, and the reviewer's copy and worklist refresh on the signal.
 - **CS-8 (claim-TTL requeue):** a case is claimed and its `claimed_at` back-dated
   past the TTL; one sweep requeues it (`CLAIMED → QUEUED`, `claimed_by` cleared) and
   writes exactly one `CONSULTATION_REQUEUED` audit row. A case still within the TTL,
@@ -246,10 +255,10 @@ these are **gates, not observations** — a drop below threshold fails CI.
 --workspace backend` (needs the test DB + Redis up). Current: ~93% stmts / ~71%
   branch.
 - **Frontend — Vitest v8.** `npm run test:cov --workspace frontend` gates statements /
-  lines / functions / branches at **≥ 80%**. Current: ~95% stmts.
+  lines / functions / branches at **≥ 80%**. Current: ~93% stmts.
 - **Exclusions** (excluded, not fake-tested): DI modules, DTO shells, `main.ts`, the
   Prisma seed, and the main-only socket.io Redis adapter.
-- **Critical scenarios stay the priority (SC-12):** CS-1 … CS-18 are covered
+- **Critical scenarios stay the priority (SC-12):** CS-1 … CS-20 are covered
   regardless of the percentage; the added tests closed real gaps (e.g. summary
   addendums, deactivation guards, Redis-degrade paths), not vanity lines.
 

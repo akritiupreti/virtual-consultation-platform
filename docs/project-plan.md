@@ -190,7 +190,7 @@ clean and green.
 | 14  | `docs/observability.md`                                      | 5          |
 | 15  | `docs/deployment.md`                                         | 5          |
 | 16  | `docs/testing-strategy.md`                                   | 2/6        |
-| 17  | `docs/adr/` — template + 0001–0019 (more as decisions arise) | 🟡 ongoing |
+| 17  | `docs/adr/` — template + 0001–0029 (more as decisions arise) | 🟡 ongoing |
 | 18  | `docs/retrospective.md`                                      | 7 ✅       |
 | 19  | `docs/performance.md`                                        | 7 ✅       |
 | 20  | `docs/demo-script.md`                                        | 7 ✅       |
@@ -216,6 +216,19 @@ clean and green.
 - ADR-0017 — Accessibility tooling (two-tier axe) ✅
 - ADR-0018 — Visual-regression tooling & baseline strategy ✅
 - ADR-0019 — Audit-log query indexing (Phase 7 performance) ✅
+
+### ADRs added after Phase 7 (workflow refinements)
+
+- ADR-0020 — Doctor sign-off of nurse-run consultations ✅
+- ADR-0021 — Patient in-app notifications for state changes ✅
+- ADR-0022 — Autosave the summary draft (superseded by ADR-0026)
+- ADR-0023 — Finalizing doctor keeps read access to the signed summary ✅
+- ADR-0024 — Request changes: return a draft to the drafter ✅
+- ADR-0025 — Durable "changes requested" indicator ✅
+- ADR-0026 — Explicit save for the summary draft (supersedes ADR-0022) ✅
+- ADR-0027 — Live summary and sign-off signals (doctors' sign-off room) ✅
+- ADR-0028 — A patient may remove a file they shared, during the session only ✅
+- ADR-0029 — A doctor's own sign-off history on the sign-off screen ✅
 
 ---
 

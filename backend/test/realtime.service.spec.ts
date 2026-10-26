@@ -49,6 +49,47 @@ describe('RealtimeService (unit)', () => {
     expect(redis.set).toHaveBeenCalledTimes(2);
   });
 
+  it('fans consultation state out to the room, the patient and the assigned clinician once', () => {
+    const service = new RealtimeService({} as never, null);
+    const room = emitter();
+    const server = { to: jest.fn(() => room) };
+    service.setServer(server as never);
+    service.broadcastConsultationUpdated({
+      id: 'c-1',
+      patientId: 'p',
+      state: ConsultationState.ENDED,
+      claimedBy: 'n',
+    });
+    // One multi-room emit: a socket in several of these rooms is notified once.
+    expect(server.to).toHaveBeenCalledTimes(1);
+    expect(server.to).toHaveBeenCalledWith(['consultation:c-1', 'user:p', 'user:n']);
+    expect(room.emit).toHaveBeenCalledWith('consultation:updated', {
+      consultationId: 'c-1',
+      state: ConsultationState.ENDED,
+    });
+  });
+
+  it('sends summary signals to the sign-off room and the assignee, never the patient', () => {
+    const service = new RealtimeService({} as never, null);
+    const room = emitter();
+    const server = { to: jest.fn(() => room) };
+    service.setServer(server as never);
+    service.notifySummaryUpdated({ consultationId: 'c-1', claimedBy: 'n', reason: 'drafted' });
+    expect(server.to).toHaveBeenCalledWith(['signoff', 'user:n']);
+    expect(room.emit).toHaveBeenCalledWith('summary:updated', {
+      consultationId: 'c-1',
+      reason: 'drafted',
+    });
+    // No assignee (e.g. requeued): doctors only.
+    service.notifySummaryUpdated({ consultationId: 'c-2', claimedBy: null, reason: 'ended' });
+    expect(server.to).toHaveBeenLastCalledWith(['signoff']);
+    service.notifyAttachmentCreated('c-1');
+    expect(server.to).toHaveBeenLastCalledWith('consultation:c-1');
+    expect(room.emit).toHaveBeenLastCalledWith('attachment:created', { consultationId: 'c-1' });
+    service.notifyAttachmentRemoved('c-1');
+    expect(room.emit).toHaveBeenLastCalledWith('attachment:removed', { consultationId: 'c-1' });
+  });
+
   it('reads a cached position, and degrades to null on a Redis error', async () => {
     const prisma = { consultation: { findMany: jest.fn() } };
     const redis = {

@@ -71,6 +71,7 @@ Defined in `backend/src/audit/audit-events.ts`; metadata is who/what/when only.
 | `MESSAGE_SENT`              | clinical-sig. | sender                      | `{ senderRole }` — never the body                                |
 | `ATTACHMENT_UPLOADED`       | clinical-sig. | uploader                    | `{ attachmentId, mimeType, sizeBytes }` — never filename/bytes   |
 | `ATTACHMENT_ACCESSED`       | clinical-sig. | viewer                      | `{ attachmentId }`                                               |
+| `ATTACHMENT_DELETED`        | clinical-sig. | patient (uploader)          | `{ attachmentId, mimeType, sizeBytes }` — never filename/bytes   |
 | `SUMMARY_DRAFTED`           | clinical-sig. | clinician                   | —                                                                |
 | `SUMMARY_FINALIZED`         | clinical-sig. | doctor                      | —                                                                |
 | `SUMMARY_CHANGES_REQUESTED` | clinical-sig. | doctor                      | `{ draftedBy }` — never the review note                          |

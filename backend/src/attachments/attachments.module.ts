@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AuditModule } from '../audit/audit.module';
+import { RealtimeModule } from '../realtime/realtime.module';
 import { AttachmentStorageService } from './attachment-storage.service';
 import {
   AttachmentDownloadController,
@@ -15,7 +16,7 @@ import { SignedUrlService } from './signed-url.service';
  * signed URLs that still pass through the authorization matrix on every fetch.
  */
 @Module({
-  imports: [AuditModule],
+  imports: [AuditModule, RealtimeModule],
   controllers: [ConsultationAttachmentsController, AttachmentDownloadController],
   providers: [AttachmentsService, SignedUrlService, AttachmentStorageService],
 })

@@ -7,9 +7,7 @@
  */
 import { useEffect, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
-import { getToken, Message } from './api';
-
-const BASE_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:3000';
+import { BASE_URL, getToken, Message } from './api';
 
 let socket: Socket | null = null;
 let socketToken: string | null = null;
@@ -102,6 +100,60 @@ export function usePatientUpdates(onChange: () => void): void {
   }, []);
 }
 
+/**
+ * A clinician's own assigned cases changed state (claimed, started, ended, cancelled
+ * by the patient, re-queued, finalized). The server also sends `consultation:updated`
+ * to the assigned clinician's personal room (ADR-0027), so "My consultations"
+ * reconciles without polling; `onChange` re-fetches the list.
+ */
+export function useAssignedUpdates(onChange: () => void): void {
+  const cb = useRef(onChange);
+  cb.current = onChange;
+
+  useEffect(() => {
+    const s = getRealtimeSocket();
+    if (!s) {
+      return;
+    }
+    const handler = (): void => cb.current();
+    s.on('consultation:updated', handler);
+    s.on('summary:updated', handler);
+    return () => {
+      s.off('consultation:updated', handler);
+      s.off('summary:updated', handler);
+    };
+  }, []);
+}
+
+export type SummaryUpdateReason = 'drafted' | 'changes_requested' | 'finalized' | 'ended';
+
+export interface SummaryUpdated {
+  consultationId: string;
+  reason: SummaryUpdateReason;
+}
+
+/**
+ * A summary changed or a case entered the sign-off window (ADR-0027). Delivered to
+ * every doctor (the sign-off room, joined on connect) and to the case's assigned
+ * clinician. Content-free: `onUpdate` reconciles via REST.
+ */
+export function useSummaryUpdates(onUpdate: (payload: SummaryUpdated) => void): void {
+  const cb = useRef(onUpdate);
+  cb.current = onUpdate;
+
+  useEffect(() => {
+    const s = getRealtimeSocket();
+    if (!s) {
+      return;
+    }
+    const handler = (payload: SummaryUpdated): void => cb.current(payload);
+    s.on('summary:updated', handler);
+    return () => {
+      s.off('summary:updated', handler);
+    };
+  }, []);
+}
+
 export interface SummaryChangesRequested {
   consultationId: string;
   note?: string;
@@ -136,6 +188,7 @@ export interface RoomHandlers {
   onMessage?: (message: Message) => void;
   onConsultationUpdated?: () => void;
   onPresence?: (participants: PresenceParticipant[]) => void;
+  onAttachment?: () => void;
 }
 
 /** Join a consultation room and receive live messages / state / presence. */
@@ -152,11 +205,34 @@ export function useConsultationRoom(id: string, handlers: RoomHandlers): void {
     const join = (): void => {
       s.emit('join:consultation', { consultationId: id });
     };
-    const onMessage = (payload: { message: Message }): void =>
-      ref.current.onMessage?.(payload.message);
-    const onUpdated = (): void => ref.current.onConsultationUpdated?.();
-    const onPresence = (payload: { participants: PresenceParticipant[] }): void =>
-      ref.current.onPresence?.(payload.participants);
+    // A socket is in several rooms at once (its personal room also carries state
+    // changes for the user's other cases), so only react to this consultation.
+    // Payloads without an id are treated as ours, for older/simpler emitters.
+    const mine = (payload?: { consultationId?: string }): boolean =>
+      !payload?.consultationId || payload.consultationId === id;
+    const onMessage = (payload: { consultationId?: string; message: Message }): void => {
+      if (mine(payload)) {
+        ref.current.onMessage?.(payload.message);
+      }
+    };
+    const onUpdated = (payload?: { consultationId?: string }): void => {
+      if (mine(payload)) {
+        ref.current.onConsultationUpdated?.();
+      }
+    };
+    const onPresence = (payload: {
+      consultationId?: string;
+      participants: PresenceParticipant[];
+    }): void => {
+      if (mine(payload)) {
+        ref.current.onPresence?.(payload.participants);
+      }
+    };
+    const onAttachment = (payload: { consultationId?: string }): void => {
+      if (mine(payload)) {
+        ref.current.onAttachment?.();
+      }
+    };
 
     if (s.connected) {
       join();
@@ -165,12 +241,16 @@ export function useConsultationRoom(id: string, handlers: RoomHandlers): void {
     s.on('message:created', onMessage);
     s.on('consultation:updated', onUpdated);
     s.on('presence:updated', onPresence);
+    s.on('attachment:created', onAttachment);
+    s.on('attachment:removed', onAttachment);
     return () => {
       s.emit('leave:consultation', { consultationId: id });
       s.off('connect', join);
       s.off('message:created', onMessage);
       s.off('consultation:updated', onUpdated);
       s.off('presence:updated', onPresence);
+      s.off('attachment:created', onAttachment);
+      s.off('attachment:removed', onAttachment);
     };
   }, [id]);
 }

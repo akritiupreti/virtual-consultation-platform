@@ -45,6 +45,8 @@ export interface MyConsultationView {
   state: ConsultationState;
   priority: Priority;
   createdAt: Date;
+  /** A short label of the patient's own chief complaint, so they can tell cases apart. */
+  complaintSummary: string;
   /** Count of cases served before this one; null unless QUEUED. */
   position: number | null;
   summaryAvailable: boolean;
@@ -64,6 +66,8 @@ export interface AssignedConsultationView {
   claimedAt: Date | null;
   startedAt: Date | null;
   endedAt: Date | null;
+  /** A summary draft exists — without one an ENDED case cannot reach sign-off (ADR-0020). */
+  summaryDrafted: boolean;
   summaryFinalized: boolean;
   /** A doctor returned the draft for the drafter to revise, not yet re-drafted (ADR-0025). */
   summaryChangesRequested: boolean;
@@ -83,6 +87,8 @@ export interface PendingSignoffView {
   endedAt: Date | null;
   draftedBy: string;
   draftedAt: Date | null;
+  /** A doctor already returned this draft and the drafter has not revised it yet (ADR-0025). */
+  changesRequested: boolean;
 }
 
 /** Full participant view (owner or assigned clinician); includes intake. */
@@ -192,6 +198,7 @@ export class ConsultationsService {
       state: consultation.state,
       priority: consultation.priority,
       createdAt: consultation.createdAt,
+      complaintSummary: dto.chiefComplaint.slice(0, 100),
       position: await this.positionOf(consultation),
       summaryAvailable: false,
     };
@@ -229,7 +236,10 @@ export class ConsultationsService {
     const rows = await this.prisma.consultation.findMany({
       where: { patientId: user.id },
       orderBy: { createdAt: 'desc' },
-      include: { summary: { select: { finalizedAt: true } } },
+      include: {
+        summary: { select: { finalizedAt: true } },
+        intake: { select: { chiefComplaint: true } },
+      },
     });
 
     // Resolve "N ahead" for every queued case from a single ordered read of the
@@ -245,6 +255,7 @@ export class ConsultationsService {
       state: row.state,
       priority: row.priority,
       createdAt: row.createdAt,
+      complaintSummary: (row.intake?.chiefComplaint ?? '').slice(0, 100),
       position: row.state === ConsultationState.QUEUED ? (positions?.get(row.id) ?? null) : null,
       summaryAvailable: row.summary?.finalizedAt != null,
     }));
@@ -276,6 +287,7 @@ export class ConsultationsService {
       claimedAt: row.claimedAt,
       startedAt: row.startedAt,
       endedAt: row.endedAt,
+      summaryDrafted: row.summary != null,
       summaryFinalized: row.summary?.finalizedAt != null,
       // Pending only while unfinalized — a finalized summary supersedes any request.
       summaryChangesRequested:
@@ -304,7 +316,7 @@ export class ConsultationsService {
       orderBy: { endedAt: 'asc' },
       include: {
         intake: { select: { symptomCategory: true, chiefComplaint: true } },
-        summary: { select: { draftedBy: true, createdAt: true } },
+        summary: { select: { draftedBy: true, createdAt: true, changesRequestedAt: true } },
       },
     });
 
@@ -317,6 +329,7 @@ export class ConsultationsService {
       endedAt: row.endedAt,
       draftedBy: row.summary?.draftedBy ?? '',
       draftedAt: row.summary?.createdAt ?? null,
+      changesRequested: row.summary?.changesRequestedAt != null,
     }));
   }
 
@@ -390,6 +403,7 @@ export class ConsultationsService {
       id,
       patientId: existing.patientId,
       state: ConsultationState.CLAIMED,
+      claimedBy: user.id,
     });
     await this.realtime.notifyQueueChanged('claimed', id);
     return this.getOne(user, id);
@@ -425,6 +439,7 @@ export class ConsultationsService {
       id,
       patientId: existing.patientId,
       state: ConsultationState.IN_SESSION,
+      claimedBy: existing.claimedBy,
     });
     return this.getOne(user, id);
   }
@@ -452,6 +467,14 @@ export class ConsultationsService {
       id,
       patientId: existing.patientId,
       state: ConsultationState.ENDED,
+      claimedBy: existing.claimedBy,
+    });
+    // A case ending with a draft already written enters the doctors' sign-off
+    // worklist now, so tell them (ADR-0027).
+    this.realtime.notifySummaryUpdated({
+      consultationId: id,
+      claimedBy: existing.claimedBy,
+      reason: 'ended',
     });
     await this.realtime.notifyQueueChanged('completed', id);
     return this.getOne(user, id);
@@ -479,6 +502,8 @@ export class ConsultationsService {
       id,
       patientId: existing.patientId,
       state: ConsultationState.CANCELLED,
+      // A patient may cancel a claimed case; its clinician's list must reflect it.
+      claimedBy: existing.claimedBy,
     });
     // Cancelling a queued case shifts everyone behind it.
     if (existing.state === ConsultationState.QUEUED) {
@@ -564,6 +589,8 @@ export class ConsultationsService {
         id: consultation.id,
         patientId: consultation.patientId,
         state: transition.to,
+        // The deactivated clinician's sockets are already closed; harmless if so.
+        claimedBy: clinicianId,
       });
     }
     if (reassigned.length > 0) {

@@ -19,6 +19,7 @@ import {
   consultationRoom,
   PresenceUpdatedPayload,
   QUEUE_ROOM,
+  SIGNOFF_ROOM,
   SubscriptionAck,
   userRoom,
   WS_EVENTS,
@@ -116,6 +117,12 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
       }
       // Every user joins their personal room for position/state updates.
       await client.join(userRoom(user.id));
+      // Doctors also join the sign-off room: any doctor may sign off a case that
+      // is awaiting it (ADR-0020), so the worklist reconciles live for all of
+      // them (ADR-0027). Content-free signals only; role comes from the verified JWT.
+      if (user.role === Role.DOCTOR) {
+        await client.join(SIGNOFF_ROOM);
+      }
       await this.presence.markConnected(user.id);
     });
   }

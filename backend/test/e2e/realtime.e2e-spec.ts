@@ -4,6 +4,7 @@ import { Socket } from 'socket.io-client';
 import { ConsultationsService } from '../../src/consultations/consultations.service';
 import { MessagingService } from '../../src/messaging/messaging.service';
 import { PrismaService } from '../../src/prisma/prisma.service';
+import { SummariesService } from '../../src/summaries/summaries.service';
 import {
   connectSocket,
   createListeningTestApp,
@@ -30,12 +31,14 @@ describe('real-time gateway (e2e)', () => {
   let url: string;
   let consultations: ConsultationsService;
   let messaging: MessagingService;
+  let summaries: SummariesService;
   const sockets: Socket[] = [];
 
   beforeAll(async () => {
     ({ app, prisma, url } = await createListeningTestApp());
     consultations = app.get(ConsultationsService);
     messaging = app.get(MessagingService);
+    summaries = app.get(SummariesService);
   });
 
   afterAll(async () => {
@@ -200,5 +203,55 @@ describe('real-time gateway (e2e)', () => {
 
     const event = await received;
     expect(event.message.body).toBe('How are you feeling now?');
+  });
+
+  // ── Live sign-off / summary signals (ADR-0027) ───────────────────────────────
+
+  it('signals summary changes to every doctor and the drafter — never the patient', async () => {
+    const consultationId = await seedQueuedRequest('patient@test.local');
+    const nurse = await createUser(prisma, Role.NURSE, 'nurse@test.local');
+    const doctor = await createUser(prisma, Role.DOCTOR, 'doctor@test.local');
+    const asNurse = { id: nurse.id, role: Role.NURSE };
+    await consultations.claim(asNurse, consultationId);
+    await consultations.start(asNurse, consultationId);
+    await summaries.draft(asNurse, consultationId, { content: 'Viral URTI; fluids, rest.' });
+
+    // The doctor is not a participant and joins no room: the sign-off room is
+    // joined on connect from the verified role. The patient is in the case room.
+    const doctorSocket = await connected(await login(app, 'doctor@test.local'));
+    const nurseSocket = await connected(await login(app, 'nurse@test.local'));
+    const patientSocket = await connected(await login(app, 'patient@test.local'));
+    await patientSocket.emitWithAck('join:consultation', { consultationId });
+    const patientHeard: unknown[] = [];
+    patientSocket.on('summary:updated', (p: unknown) => patientHeard.push(p));
+
+    // Ending with a draft puts the case on the worklist: doctors hear about it.
+    const ended = waitForEvent<{ reason: string }>(doctorSocket, 'summary:updated');
+    // The nurse's list also reconciles state live via their personal room.
+    const nurseState = waitForEvent<{ state: string }>(nurseSocket, 'consultation:updated');
+    await consultations.complete(asNurse, consultationId);
+    await expect(ended).resolves.toEqual({ consultationId, reason: 'ended' });
+    await expect(nurseState).resolves.toMatchObject({ consultationId, state: 'ENDED' });
+
+    // A doctor returns the draft: the drafter's open editor/list reconcile live.
+    const nurseHears = waitForEvent<{ reason: string }>(nurseSocket, 'summary:updated');
+    // Other doctors' worklists reconcile too (the row now shows "returned").
+    const doctorSeesReturn = waitForEvent<{ reason: string }>(doctorSocket, 'summary:updated');
+    await summaries.requestChanges({ id: doctor.id, role: Role.DOCTOR }, consultationId, {
+      note: 'Add the temperature.',
+    });
+    await expect(doctorSeesReturn).resolves.toMatchObject({ reason: 'changes_requested' });
+    const signal = await nurseHears;
+    expect(signal).toEqual({ consultationId, reason: 'changes_requested' });
+    // Content-free: the doctor's note never rides this broadcast signal.
+    expect(JSON.stringify(signal)).not.toContain('temperature');
+
+    // The drafter revises: the reviewing doctor's open copy reconciles live.
+    const doctorHears = waitForEvent<{ reason: string }>(doctorSocket, 'summary:updated');
+    await summaries.draft(asNurse, consultationId, { content: 'Viral URTI; T 38.1C.' });
+    await expect(doctorHears).resolves.toEqual({ consultationId, reason: 'drafted' });
+
+    // A draft is never the patient's to see — not even as a signal.
+    expect(patientHeard).toEqual([]);
   });
 });

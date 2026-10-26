@@ -25,6 +25,7 @@ function build(cachedPosition: number | null = null) {
   const realtime = {
     notifyQueueChanged: jest.fn().mockResolvedValue(undefined),
     broadcastConsultationUpdated: jest.fn(),
+    notifySummaryUpdated: jest.fn(),
     getCachedPosition: jest.fn().mockResolvedValue(cachedPosition),
   };
   const config = { get: jest.fn().mockReturnValue(undefined) };
@@ -166,12 +167,15 @@ describe('ConsultationsService (unit)', () => {
     );
     expect(assigned[0]).toMatchObject({
       id: 'c-2',
+      summaryDrafted: true,
       summaryFinalized: true,
       symptomCategory: 'RESPIRATORY',
     });
     expect(assigned[0].complaintSummary).toHaveLength(100); // narrative trimmed
     expect(assigned[1]).toMatchObject({
       id: 'c-1',
+      // No draft yet — the list flags "summary needed" so the case is not stranded.
+      summaryDrafted: false,
       summaryFinalized: false,
       symptomCategory: null,
       complaintSummary: '',
@@ -270,6 +274,7 @@ describe('ConsultationsService (unit)', () => {
         endedAt: new Date('2026-10-22T09:00:00Z'),
         draftedBy: 'nurse-1',
         draftedAt: new Date('2026-10-22T09:05:00Z'),
+        changesRequested: false,
       },
     ]);
     // Minimal view must never carry the summary content.

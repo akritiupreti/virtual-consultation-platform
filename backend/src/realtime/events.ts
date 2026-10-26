@@ -29,6 +29,14 @@ export const WS_EVENTS = {
    * only to the drafter's personal room, so the optional note reaches no one else.
    */
   SUMMARY_CHANGES_REQUESTED: 'summary:changes-requested',
+  /**
+   * A consultation's summary changed (drafted, returned for changes, finalized) or
+   * a case entered the sign-off window (ADR-0027). Content-free: recipients — the
+   * assigned clinician and every doctor — reconcile via REST.
+   */
+  SUMMARY_UPDATED: 'summary:updated',
+  /** A file was attached in a consultation room; members reconcile via REST. */
+  ATTACHMENT_CREATED: 'attachment:created',
   /** A patient's live "N ahead" position changed. */
   POSITION_UPDATED: 'position:updated',
   /** Presence of a consultation's participants changed. */
@@ -41,6 +49,12 @@ export const QUEUE_ROOM = 'queue';
 export const consultationRoom = (id: string): string => `consultation:${id}`;
 /** Per-user personal room — carries a patient's own position/state updates. */
 export const userRoom = (userId: string): string => `user:${userId}`;
+/**
+ * Doctors' sign-off room (ADR-0027). Every DOCTOR socket joins it on connect: any
+ * doctor may sign off a case awaiting it (ADR-0020), so the worklist and an open
+ * review must reconcile live for all of them. Carries content-free signals only.
+ */
+export const SIGNOFF_ROOM = 'signoff';
 
 /** Why the queue changed (FR-18 / C18 triggers). No clinical content. */
 export type QueueChangeReason =
@@ -77,6 +91,18 @@ export interface MessageCreatedPayload {
 export interface SummaryChangesRequestedPayload {
   consultationId: string;
   note?: string;
+}
+
+/** Why a summary signal fired (ADR-0027). No clinical content. */
+export type SummaryUpdateReason = 'drafted' | 'changes_requested' | 'finalized' | 'ended';
+
+export interface SummaryUpdatedPayload {
+  consultationId: string;
+  reason: SummaryUpdateReason;
+}
+
+export interface AttachmentCreatedPayload {
+  consultationId: string;
 }
 
 export interface PositionUpdatedPayload {

@@ -22,14 +22,16 @@ function build() {
   const storage = { save: jest.fn(), openStream: jest.fn() };
   const signedUrl = { verify: jest.fn(), sign: jest.fn(), ttl: 300 };
   const config = { get: jest.fn().mockReturnValue(undefined) };
+  const realtime = { notifyAttachmentCreated: jest.fn() };
   const service = new AttachmentsService(
     prisma as never,
     audit as never,
     storage as never,
     signedUrl as never,
     config as never,
+    realtime as never,
   );
-  return { service, prisma, audit, storage, signedUrl };
+  return { service, prisma, audit, storage, signedUrl, realtime };
 }
 
 const participant = { id: 'pat', role: Role.PATIENT };
@@ -83,6 +85,33 @@ describe('AttachmentsService (unit)', () => {
         size: 10,
       }),
     ).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('stores a valid upload, audits it, and signals the room (no filename in the signal)', async () => {
+    const { service, prisma, storage, audit, realtime } = build();
+    prisma.consultation.findUnique.mockResolvedValue(inSession);
+    prisma.attachment.count.mockResolvedValue(0);
+    storage.save.mockResolvedValue('opaque-key');
+    prisma.attachment.create.mockResolvedValue({
+      id: 'a-1',
+      filename: 'rash.png',
+      mimeType: 'image/png',
+      sizeBytes: 12,
+      uploadedBy: 'pat',
+      createdAt: new Date(),
+    });
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]);
+    const view = await service.upload(participant, 'c-1', {
+      buffer: png,
+      originalname: 'rash.png',
+      mimetype: 'image/png',
+      size: 12,
+    });
+    expect(view.id).toBe('a-1');
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({ eventType: 'ATTACHMENT_UPLOADED' }),
+    );
+    expect(realtime.notifyAttachmentCreated).toHaveBeenCalledWith('c-1');
   });
 
   it('lists attachments with freshly-minted signed URLs', async () => {

@@ -13,6 +13,7 @@ import { AuditService } from '../audit/audit.service';
 import { Action } from '../common/authz/authorization-matrix';
 import { ActingUser, authorizeConsultationAction } from '../common/authz/policy';
 import { PrismaService } from '../prisma/prisma.service';
+import { RealtimeService } from '../realtime/realtime.service';
 import { AttachmentStorageService } from './attachment-storage.service';
 import { resolveAttachmentMime } from './file-validation';
 import { SignedUrlService } from './signed-url.service';
@@ -60,6 +61,7 @@ export class AttachmentsService {
     private readonly storage: AttachmentStorageService,
     private readonly signedUrl: SignedUrlService,
     config: ConfigService,
+    private readonly realtime: RealtimeService,
   ) {
     this.maxBytes = positiveIntOr(config.get('ATTACHMENT_MAX_BYTES'), DEFAULT_MAX_BYTES);
     this.maxPerConsultation = positiveIntOr(
@@ -119,6 +121,9 @@ export class AttachmentsService {
       // Who/what/when only: no filename (may carry PII) and never the file bytes.
       metadata: { attachmentId: attachment.id, mimeType, sizeBytes: file.size },
     });
+    // Let the other participant's open room show the file without a refresh. The
+    // signal is content-free; they re-fetch the list through the matrix (ADR-0027).
+    this.realtime.notifyAttachmentCreated(consultationId);
 
     return toView(attachment);
   }

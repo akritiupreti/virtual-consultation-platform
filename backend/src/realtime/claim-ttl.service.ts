@@ -122,6 +122,8 @@ export class ClaimTtlService implements OnModuleInit, OnModuleDestroy {
         id: consultation.id,
         patientId: consultation.patientId,
         state: REQUEUE_TRANSITION.to,
+        // The clinician who let the claim lapse sees it leave their list live.
+        claimedBy: consultation.claimedBy,
       });
     }
 

@@ -85,6 +85,13 @@ export class SummariesService {
       eventType: AUDIT_EVENTS.SUMMARY_DRAFTED,
       consultationId,
     });
+    // A reviewing doctor's open draft and the sign-off worklist reconcile live, so
+    // a revision is never signed off from a stale copy (ADR-0027).
+    this.realtime.notifySummaryUpdated({
+      consultationId,
+      claimedBy: consultation.claimedBy,
+      reason: 'drafted',
+    });
 
     return this.toView(summary);
   }
@@ -136,6 +143,13 @@ export class SummariesService {
       id: consultationId,
       patientId: consultation.patientId,
       state: ConsultationState.SUMMARIZED,
+      claimedBy: consultation.claimedBy,
+    });
+    // The case leaves every doctor's worklist, and the drafter's list shows it signed.
+    this.realtime.notifySummaryUpdated({
+      consultationId,
+      claimedBy: consultation.claimedBy,
+      reason: 'finalized',
     });
 
     return this.toView(summary);
@@ -193,6 +207,13 @@ export class SummariesService {
     this.realtime.notifySummaryChangesRequested(summary.draftedBy, {
       consultationId,
       note: dto.note,
+    });
+    // ...and reconcile the durable marker everywhere it shows: the assigned
+    // clinician's list and open editor, and other doctors' worklists (ADR-0027).
+    this.realtime.notifySummaryUpdated({
+      consultationId,
+      claimedBy: consultation.claimedBy,
+      reason: 'changes_requested',
     });
 
     return this.toView(updated);

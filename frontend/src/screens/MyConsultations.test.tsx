@@ -34,6 +34,33 @@ describe('MyConsultations (clinician)', () => {
     expect(summaryLinks[0]).toHaveAttribute('href', '/consultations/c-1/summary');
   });
 
+  it('flags a case a doctor returned for changes with a badge (ADR-0025)', async () => {
+    mock.getAssigned.mockResolvedValue([
+      {
+        ...fixtures.assignedConsultations[1],
+        id: 'c-9',
+        state: 'ENDED',
+        summaryFinalized: false,
+        summaryChangesRequested: true,
+      },
+    ]);
+    const { findByText } = render();
+    expect(await findByText(/changes requested/i)).toBeInTheDocument();
+  });
+
+  it('does not show the changes-requested badge once the summary is finalized', async () => {
+    mock.getAssigned.mockResolvedValue([
+      {
+        ...fixtures.assignedConsultations[0],
+        summaryFinalized: true,
+        summaryChangesRequested: true,
+      },
+    ]);
+    const { findAllByRole, queryByText } = render();
+    await findAllByRole('link', { name: /open room/i });
+    expect(queryByText(/changes requested/i)).not.toBeInTheDocument();
+  });
+
   it('shows an empty state when the clinician has no assigned cases', async () => {
     mock.getAssigned.mockResolvedValue([]);
     const { findByText } = render();

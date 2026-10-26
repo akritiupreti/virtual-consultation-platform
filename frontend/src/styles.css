@@ -363,6 +363,11 @@ tbody tr:last-child td {
   background: #f3e8fd;
   color: #7a3db8;
 }
+/* Attention badge — e.g. a summary a doctor returned for changes (ADR-0025). */
+.badge-attention {
+  background: #fff3e0;
+  color: #8a5000;
+}
 
 .nav .badge {
   box-shadow: 0 1px 0 rgba(0, 0, 0, 0.05);
@@ -455,6 +460,17 @@ tbody tr:last-child td {
   color: var(--ok-fg);
   background: var(--ok-bg);
   border: 1px solid #bfe0c8;
+  border-radius: 9px;
+  padding: 10px 12px;
+  margin: 8px 0;
+  font-size: 0.9rem;
+}
+
+/* Attention banner — a doctor returned this draft for changes (ADR-0025). */
+.banner-attention {
+  color: #8a5000;
+  background: #fff3e0;
+  border: 1px solid #f0d9b5;
   border-radius: 9px;
   padding: 10px 12px;
   margin: 8px 0;

@@ -75,6 +75,8 @@ erDiagram
         uuid finalized_by FK "nullable, DOCTOR"
         text content
         timestamp finalized_at "nullable"
+        timestamp changes_requested_at "nullable"
+        text changes_requested_note "nullable"
     }
     ADDENDUM {
         uuid id PK
@@ -104,6 +106,10 @@ erDiagram
   in Redis for fast reads, but Postgres remains authoritative.
 - **Summary immutability:** a finalized `SUMMARY` is never edited; corrections are
   appended as `ADDENDUM` rows, preserving an auditable record.
+- **Changes-requested marker:** `changes_requested_at` / `changes_requested_note` are a
+  transient, pre-finalize signal set when a doctor returns a draft for revision and
+  **cleared on the drafter's next save** (ADR-0024/0025). The note is feedback for the
+  drafter, shown in-app only — it is never copied into the audit log (invariant 6).
 - **Attachments** store an **opaque `storage_key`** (a server-generated UUID naming
   the file in the local object store), never the client filename, and never the bytes
   in the DB. Access is only via short-lived, user-scoped signed URLs that re-run the

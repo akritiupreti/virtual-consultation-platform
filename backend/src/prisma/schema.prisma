@@ -143,6 +143,13 @@ model Summary {
   finalizedBy    String?   @map("finalized_by") @db.Uuid
   content        String
   finalizedAt    DateTime? @map("finalized_at")
+  // A reviewing doctor returned this draft for changes (ADR-0024/0025). Set when
+  // changes are requested, cleared when the drafter next saves — so the drafter has
+  // a durable "please revise" signal, with the note, until they act. The note is
+  // feedback for the drafter only; it never reaches logs or the audit trail
+  // (invariant 6) and is irrelevant once the summary is finalized.
+  changesRequestedAt   DateTime? @map("changes_requested_at")
+  changesRequestedNote String?   @map("changes_requested_note")
   createdAt      DateTime  @default(now()) @map("created_at")
 
   consultation Consultation @relation(fields: [consultationId], references: [id], onDelete: Cascade)

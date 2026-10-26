@@ -55,7 +55,14 @@ export default function MyConsultations(): JSX.Element {
                   <td className={`tier-${c.priority}`}>{c.priority}</td>
                   <td>{c.symptomCategory ?? '—'}</td>
                   <td>{c.complaintSummary || '—'}</td>
-                  <td>{c.state}</td>
+                  <td>
+                    {c.state}
+                    {c.summaryChangesRequested && !c.summaryFinalized && (
+                      <span className="badge badge-attention" style={{ marginLeft: 8 }}>
+                        Changes requested
+                      </span>
+                    )}
+                  </td>
                   <td className="inline">
                     <Link className="btn-link" to={`/consultations/${c.id}`}>
                       Open room

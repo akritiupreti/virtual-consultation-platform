@@ -50,6 +50,8 @@ export interface AssignedConsultation {
   startedAt: string | null;
   endedAt: string | null;
   summaryFinalized: boolean;
+  /** A doctor returned the draft for revision and the drafter has not re-saved yet (ADR-0025). */
+  summaryChangesRequested: boolean;
 }
 
 /**
@@ -105,6 +107,9 @@ export interface Summary {
   finalizedBy: string | null;
   finalizedAt: string | null;
   finalized: boolean;
+  /** Set while a doctor's revision request is outstanding; the note is their feedback (ADR-0025). */
+  changesRequestedAt: string | null;
+  changesRequestedNote: string | null;
 }
 
 export interface AuditEntry {

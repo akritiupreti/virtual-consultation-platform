@@ -67,6 +67,7 @@ export const assignedConsultations: AssignedConsultation[] = [
     startedAt: '2026-10-22T09:03:00.000Z',
     endedAt: '2026-10-22T09:20:00.000Z',
     summaryFinalized: true,
+    summaryChangesRequested: false,
   },
   {
     id: 'c-2',
@@ -78,6 +79,7 @@ export const assignedConsultations: AssignedConsultation[] = [
     startedAt: null,
     endedAt: null,
     summaryFinalized: false,
+    summaryChangesRequested: false,
   },
 ];
 
@@ -152,6 +154,8 @@ export function summary(overrides: Partial<Summary> = {}): Summary {
     finalizedBy: 'u-doctor',
     finalizedAt: '2026-10-22T09:10:00.000Z',
     finalized: true,
+    changesRequestedAt: null,
+    changesRequestedNote: null,
     ...overrides,
   };
 }

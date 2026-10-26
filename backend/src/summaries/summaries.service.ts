@@ -133,12 +133,20 @@ export class SummariesService {
    */
   async get(user: ActingUser, consultationId: string): Promise<SummaryView> {
     const consultation = await this.loadConsultationOr404(consultationId);
-    authorizeConsultationAction(user, consultation, Action.VIEW_SUMMARY);
-
+    // Load the summary before the authz check so the policy can grant the
+    // finalizing doctor continued read access via `finalizedBy` (ADR-0023). The
+    // role → state → ownership check still runs first, so a disallowed caller
+    // gets 403 ahead of the not-found below, exactly as before.
     const summary = await this.prisma.summary.findUnique({
       where: { consultationId },
       include: { addenda: { orderBy: { createdAt: 'asc' } } },
     });
+    authorizeConsultationAction(
+      user,
+      { ...consultation, finalizedBy: summary?.finalizedBy ?? null },
+      Action.VIEW_SUMMARY,
+    );
+
     // Hide a draft (and even its existence) from the patient until it is finalized.
     if (!summary || (user.role === Role.PATIENT && !summary.finalizedAt)) {
       throw new NotFoundException('Summary not available');

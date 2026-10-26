@@ -131,8 +131,23 @@ describe('doctor sign-off of a nurse-run case (e2e)', () => {
       .expect(200);
     expect(finalize.body.finalized).toBe(true);
 
+    const doctorRow = await prisma.user.findUniqueOrThrow({
+      where: { email: 'doctor@test.local' },
+    });
+
+    // The finalizing doctor keeps read access to the summary they signed, even now
+    // that the case is SUMMARIZED and they are not a participant (ADR-0023).
+    const afterSummary = await request(server)
+      .get(`/consultations/${consultationId}/summary`)
+      .set('Authorization', bearer(doctorToken))
+      .expect(200);
+    expect(afterSummary.body.finalized).toBe(true);
+    expect(afterSummary.body.finalizedBy).toBe(doctorRow.id);
+    expect(afterSummary.body.content).toContain('viral URTI');
+
     // The sign-off read window is scoped to ENDED: once the case is SUMMARIZED the
-    // non-participant doctor can no longer read it (membership-scoping restored).
+    // non-participant doctor can no longer read the consultation DETAIL (intake) —
+    // membership-scoping restored (ADR-0020). Only the signed summary (above) stays.
     await request(server)
       .get(`/consultations/${consultationId}`)
       .set('Authorization', bearer(doctorToken))
@@ -154,9 +169,6 @@ describe('doctor sign-off of a nurse-run case (e2e)', () => {
 
     // Sign-off is audited: finalizing doctor is the actor, nurse is recorded as drafter,
     // and no summary text leaks into the audit metadata.
-    const doctorRow = await prisma.user.findUniqueOrThrow({
-      where: { email: 'doctor@test.local' },
-    });
     const finalized = await prisma.auditLog.findFirst({
       where: { consultationId, eventType: 'SUMMARY_FINALIZED' },
     });

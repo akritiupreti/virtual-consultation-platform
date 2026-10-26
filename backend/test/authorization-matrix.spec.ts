@@ -203,3 +203,49 @@ describe('doctor sign-off read window (PARTICIPANT_OR_SIGNOFF_DOCTOR)', () => {
     }
   });
 });
+
+/**
+ * Finalizing doctor keeps read access to the summary they signed (ADR-0023).
+ * The sign-off read window (above) is scoped to ENDED, so without this a doctor
+ * who signs off a nurse-run case — a non-participant — would be locked out of the
+ * record the instant they finalize it (ENDED → SUMMARIZED). The grant is keyed to
+ * `finalizedBy`, so it is exactly the one signing doctor and nothing wider, and it
+ * is carried only for VIEW_SUMMARY — the consultation detail stays membership-scoped.
+ */
+describe('finalizing doctor summary read (ADR-0023)', () => {
+  const signingDoctor = { id: 'doc-2', role: Role.DOCTOR };
+  const otherDoctor = { id: 'doc-3', role: Role.DOCTOR };
+  const patient = { id: 'patient-1', role: Role.PATIENT };
+  // A nurse ran this case; a non-participant doctor signed it, so it is now SUMMARIZED.
+  const signedByDoctor = {
+    patientId: patient.id,
+    claimedBy: 'nurse-1',
+    state: ConsultationState.SUMMARIZED,
+    finalizedBy: signingDoctor.id,
+  };
+
+  it('lets the finalizing doctor read the summary after sign-off (SUMMARIZED)', () => {
+    expect(() =>
+      authorizeConsultationAction(signingDoctor, signedByDoctor, Action.VIEW_SUMMARY),
+    ).not.toThrow();
+  });
+
+  it('does not extend to a different doctor who did not finalize it', () => {
+    expect(() =>
+      authorizeConsultationAction(otherDoctor, signedByDoctor, Action.VIEW_SUMMARY),
+    ).toThrow(ForbiddenActionException);
+  });
+
+  it('does not re-open the consultation detail — that stays membership-scoped', () => {
+    // VIEW_CONSULTATION never carries `finalizedBy`, so the signing doctor remains
+    // locked out of the intake once the case leaves the sign-off window (ADR-0020).
+    const detailRef = {
+      patientId: patient.id,
+      claimedBy: 'nurse-1',
+      state: ConsultationState.SUMMARIZED,
+    };
+    expect(() =>
+      authorizeConsultationAction(signingDoctor, detailRef, Action.VIEW_CONSULTATION),
+    ).toThrow(ForbiddenActionException);
+  });
+});

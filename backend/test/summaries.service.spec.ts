@@ -1,6 +1,9 @@
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import { ConsultationState, Role } from '@prisma/client';
-import { SummaryFinalizedException } from '../src/common/errors/domain-exceptions';
+import {
+  ForbiddenActionException,
+  SummaryFinalizedException,
+} from '../src/common/errors/domain-exceptions';
 import { SummariesService } from '../src/summaries/summaries.service';
 
 /**
@@ -141,6 +144,47 @@ describe('SummariesService (unit)', () => {
     const { service } = build(prisma);
     const patient = { id: 'pat', role: Role.PATIENT };
     await expect(service.get(patient, 'c-1')).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('lets the finalizing doctor read a nurse-run summary after sign-off (ADR-0023)', async () => {
+    const prisma = makePrisma();
+    // A nurse ran the case; the signing doctor ('doc') is not a participant.
+    prisma.consultation.findUnique.mockResolvedValue({
+      patientId: 'pat',
+      claimedBy: 'nurse',
+      state: ConsultationState.SUMMARIZED,
+    });
+    prisma.summary.findUnique.mockResolvedValue({
+      consultationId: 'c-1',
+      content: 'Likely viral URTI.',
+      draftedBy: 'nurse',
+      finalizedBy: 'doc',
+      finalizedAt: new Date(),
+      addenda: [],
+    });
+    const { service } = build(prisma);
+    const view = await service.get(doctor, 'c-1');
+    expect(view.finalized).toBe(true);
+    expect(view.finalizedBy).toBe('doc');
+  });
+
+  it('still denies a different doctor the finalized summary (ADR-0023 is finalizer-scoped)', async () => {
+    const prisma = makePrisma();
+    prisma.consultation.findUnique.mockResolvedValue({
+      patientId: 'pat',
+      claimedBy: 'nurse',
+      state: ConsultationState.SUMMARIZED,
+    });
+    prisma.summary.findUnique.mockResolvedValue({
+      consultationId: 'c-1',
+      content: 'Likely viral URTI.',
+      draftedBy: 'nurse',
+      finalizedBy: 'other-doc',
+      finalizedAt: new Date(),
+      addenda: [],
+    });
+    const { service } = build(prisma);
+    await expect(service.get(doctor, 'c-1')).rejects.toBeInstanceOf(ForbiddenActionException);
   });
 
   it('adds an append-only addendum to a finalized summary', async () => {

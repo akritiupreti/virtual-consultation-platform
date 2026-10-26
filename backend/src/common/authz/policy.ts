@@ -23,6 +23,13 @@ export interface ConsultationRef {
   patientId: string;
   claimedBy: string | null;
   state: ConsultationState;
+  /**
+   * The doctor who finalized the summary, if any. Populated only for summary
+   * reads (`VIEW_SUMMARY`) so the finalizing doctor keeps read access to the
+   * record they signed once the case leaves the sign-off window (ADR-0023).
+   * Absent for every other action, where it has no effect.
+   */
+  finalizedBy?: string | null;
 }
 
 /**
@@ -82,7 +89,17 @@ function assertOwnership(
       // nurse ran and no doctor ever joined. Never widens to admin (not DOCTOR).
       const isSignoffDoctor =
         user.role === Role.DOCTOR && SIGNOFF_PENDING_STATES.includes(consultation.state);
-      if (!isParticipant && !isSignoffDoctor) {
+      // The doctor who finalised a summary keeps read access to that record once
+      // the case leaves the sign-off window (ENDED → SUMMARIZED). Without this the
+      // signing doctor on a nurse-run case — who is not a participant — would be
+      // locked out of the very summary they just signed (ADR-0023). Strictly the
+      // one finalising doctor, never "any doctor", so exposure stays minimal
+      // (invariant 6); `finalizedBy` is set only for VIEW_SUMMARY.
+      const isFinalizingDoctor =
+        user.role === Role.DOCTOR &&
+        consultation.finalizedBy != null &&
+        consultation.finalizedBy === user.id;
+      if (!isParticipant && !isSignoffDoctor && !isFinalizingDoctor) {
         throw new ForbiddenActionException();
       }
       break;

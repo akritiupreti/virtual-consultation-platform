@@ -33,11 +33,13 @@ Legend: ✅ allowed · ⚠️ allowed with guard · ❌ denied.
 | View triage queue                  |   ❌    |  ✅   |   ✅   |  ❌   | —                                                                                                             |
 | View pre-claim case info (minimal) |   ❌    |  ✅   |   ✅   |  ❌   | Minimal fields only                                                                                           |
 | View pending sign-off worklist     |   ❌    |  ❌   |   ✅   |  ❌   | ENDED + drafted-unfinalized; minimal fields                                                                   |
+| View own sign-off history          |   ❌    |  ❌   |   ⚠️   |  ❌   | Own sign-offs only (`finalizedBy=self`); minimal fields ([ADR-0029](adr/0029-doctor-signoff-history.md))      |
 | Claim case                         |   ❌    |  ⚠️   |   ⚠️   |  ❌   | `state=QUEUED`, under claim cap                                                                               |
 | Start consultation                 |   ❌    |  ⚠️   |   ⚠️   |  ❌   | `actor = claimed_by`, `state=CLAIMED`                                                                         |
 | Send / read messages               |   ⚠️    |  ⚠️   |   ⚠️   |  ❌   | Participant of that consultation                                                                              |
 | Upload attachment                  |   ⚠️    |  ⚠️   |   ⚠️   |  ❌   | Participant; `state=IN_SESSION`                                                                               |
 | View / download attachment         |   ⚠️    |  ⚠️   |   ⚠️   |  ❌   | Participant; short-lived user-scoped signed URL                                                               |
+| Remove attachment                  |   ⚠️    |  ❌   |   ❌   |  ❌   | Patient owner; **own upload**; `state=IN_SESSION` only ([ADR-0028](adr/0028-patient-attachment-removal.md))   |
 | End consultation                   |   ❌    |  ⚠️   |   ⚠️   |  ❌   | `actor = claimed_by`, `state=IN_SESSION`                                                                      |
 | Draft summary                      |   ❌    |  ⚠️   |   ⚠️   |  ❌   | Assigned clinician                                                                                            |
 | Finalize summary                   |   ❌    |  ❌   |   ⚠️   |  ❌   | `role=DOCTOR`, `state=ENDED`                                                                                  |

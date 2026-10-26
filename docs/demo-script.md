@@ -74,8 +74,7 @@ sequenceDiagram
 
 1. **Patient** — sign in as `patient@vcp.local` → land on `/patient`. Submit a request
    (main problem, symptom category, onset, severity, optional history/medications,
-   **consent checkbox**). **Look for:** the "not for emergencies" notice, and the request
-   immediately listed under **Current** with a status stepper and a live **"N people
+   **consent checkbox**). **Look for:** the request immediately listed under **Current** with a status stepper and a live **"N people
    ahead of you"** position. Cancelling asks for confirmation first.
 2. **Nurse** — sign in as `nurse@vcp.local` → `/queue`. **Look for:** the queue shows
    only the **pre-claim minimum** (priority, symptom category, severity, a short
@@ -85,7 +84,9 @@ sequenceDiagram
 3. **Nurse** — **Start session** in the room (`/consultations/:id`, state → In
    session). Send a message; as the patient, attach a photo or PDF under **Files**.
    **Look for:** messages and files arriving **live** on the other side, with sender
-   labels, and the other party's online status in the header.
+   labels, and the other party's online status in the header. The patient can
+   **Remove** a file they shared by mistake (after confirming) — it disappears from the
+   nurse's list live — but only while the session is in progress (ADR-0028).
 4. **Nurse** — type the summary in **Clinical summary**. **Look for:** typing shows
    **Unsaved changes** and sends nothing; **Save draft** persists it ("Saved at …").
    Then **End consultation** — it asks for confirmation and saves an unsaved draft
@@ -105,7 +106,8 @@ sequenceDiagram
    for:** finalize is **doctor-only** and the summary becomes **immutable**; on the
    summary page a clinician can only **add an addendum**, which is appended and shown
    to the patient. The **finalizing doctor can still read** the summary they signed,
-   even on a nurse-run case (ADR-0023).
+   even on a nurse-run case (ADR-0023): on **Pending sign-off**, switch to
+   **Completed** — the case is kept there with a **View summary** link (ADR-0029).
 7. **Patient** — **look for** a "summary is ready" toast; open **View summary** to read
    the finalized summary and its addenda (and **Print** it).
 8. **Session expiry** — JWTs are short-lived (`JWT_EXPIRES_IN`, 15 min locally). When

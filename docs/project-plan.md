@@ -190,7 +190,7 @@ clean and green.
 | 14  | `docs/observability.md`                                      | 5          |
 | 15  | `docs/deployment.md`                                         | 5          |
 | 16  | `docs/testing-strategy.md`                                   | 2/6        |
-| 17  | `docs/adr/` — template + 0001–0027 (more as decisions arise) | 🟡 ongoing |
+| 17  | `docs/adr/` — template + 0001–0029 (more as decisions arise) | 🟡 ongoing |
 | 18  | `docs/retrospective.md`                                      | 7 ✅       |
 | 19  | `docs/performance.md`                                        | 7 ✅       |
 | 20  | `docs/demo-script.md`                                        | 7 ✅       |
@@ -227,6 +227,8 @@ clean and green.
 - ADR-0025 — Durable "changes requested" indicator ✅
 - ADR-0026 — Explicit save for the summary draft (supersedes ADR-0022) ✅
 - ADR-0027 — Live summary and sign-off signals (doctors' sign-off room) ✅
+- ADR-0028 — A patient may remove a file they shared, during the session only ✅
+- ADR-0029 — A doctor's own sign-off history on the sign-off screen ✅
 
 ---
 

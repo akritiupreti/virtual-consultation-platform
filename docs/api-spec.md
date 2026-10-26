@@ -52,6 +52,7 @@ ownership condition checked after the role gate.
 | `GET /consultations/mine`            | P     | owner                                                    | —              | `200` own consultations + "N ahead"          |
 | `GET /consultations/assigned`        | N,D   | own claims (`claimedBy` = caller)                        | —              | `200` minimal list of the caller's cases     |
 | `GET /consultations/pending-signoff` | D     | `state=ENDED` + drafted-unfinalized summary              | —              | `200` minimal sign-off worklist              |
+| `GET /consultations/signed-off`      | D     | own sign-offs (`summary.finalizedBy` = caller)           | —              | `200` minimal sign-off history (ADR-0029)    |
 | `GET /consultations/:id`             | P,N,D | participant · _or_ doctor while `state=ENDED` (sign-off) | —              | `200` full detail + intake                   |
 | `POST /consultations/:id/claim`      | N,D   | `state=QUEUED` (DB-atomic)                               | —              | `200` CLAIMED · `409` if already claimed     |
 | `POST /consultations/:id/start`      | N,D   | assigned · `state=CLAIMED` · under cap                   | —              | `200` IN_SESSION · `409` cap/again           |
@@ -70,11 +71,12 @@ identity or attachments (data minimization, FR-7/C7).
 The **list views** are deliberately minimal (invariant 6) — a short complaint label,
 never the full narrative or summary text:
 
-| View                       | Fields                                                                                                                                                               |
-| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `mine` (patient)           | `id`, `state`, `priority`, `createdAt`, `complaintSummary` (their own, ≤100 chars), `position` (QUEUED only), `summaryAvailable`                                     |
-| `assigned` (clinician)     | `id`, `state`, `priority`, `symptomCategory`, `complaintSummary`, `claimedAt`/`startedAt`/`endedAt`, `summaryDrafted`, `summaryFinalized`, `summaryChangesRequested` |
-| `pending-signoff` (doctor) | `id`, `priority`, `symptomCategory`, `complaintSummary`, `endedAt`, `draftedBy`, `draftedAt`, `changesRequested` (returned to the drafter, not yet revised)          |
+| View                       | Fields                                                                                                                                                                                    |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mine` (patient)           | `id`, `state`, `priority`, `createdAt`, `complaintSummary` (their own, ≤100 chars), `position` (QUEUED only), `summaryAvailable`                                                          |
+| `assigned` (clinician)     | `id`, `state`, `priority`, `symptomCategory`, `complaintSummary`, `claimedAt`/`startedAt`/`endedAt`, `summaryDrafted`, `summaryFinalized`, `summaryChangesRequested`                      |
+| `pending-signoff` (doctor) | `id`, `priority`, `symptomCategory`, `complaintSummary`, `endedAt`, `draftedBy`, `draftedAt`, `changesRequested` (returned to the drafter, not yet revised)                               |
+| `signed-off` (doctor)      | `id`, `priority`, `symptomCategory`, `complaintSummary`, `endedAt`, `finalizedAt`, `draftedBy` — never the summary text; open the summary via `GET /consultations/:id/summary` (ADR-0023) |
 
 `summaryDrafted: false` on an `ENDED` case is what the clinician UI flags as "Write
 the summary": without a saved draft the case cannot reach the sign-off worklist
@@ -95,11 +97,12 @@ user-scoped **signed URLs** that still pass the authorization matrix on every fe
 duties). Allowed types: **JPEG/PNG/PDF** (validated by magic bytes), ≤ 10 MB/file,
 with a per-consultation count cap.
 
-| Method & path                          | Roles | Guard                                                                                  | Body                               | Success                                           |
-| -------------------------------------- | ----- | -------------------------------------------------------------------------------------- | ---------------------------------- | ------------------------------------------------- |
-| `POST /consultations/:id/attachments`  | P,N,D | participant · `state=IN_SESSION`                                                       | `multipart/form-data` field `file` | `201` attachment metadata                         |
-| `GET /consultations/:id/attachments`   | P,N,D | participant                                                                            | —                                  | `200` list + per-item `downloadUrl` + `expiresAt` |
-| `GET /attachments/:id/download?token=` | —     | **signed token** (user-scoped, short-lived); re-runs the matrix + active-account check | —                                  | `200` file stream (`inline`)                      |
+| Method & path                                         | Roles | Guard                                                                                  | Body                               | Success                                                              |
+| ----------------------------------------------------- | ----- | -------------------------------------------------------------------------------------- | ---------------------------------- | -------------------------------------------------------------------- |
+| `POST /consultations/:id/attachments`                 | P,N,D | participant · `state=IN_SESSION`                                                       | `multipart/form-data` field `file` | `201` attachment metadata                                            |
+| `GET /consultations/:id/attachments`                  | P,N,D | participant                                                                            | —                                  | `200` list + per-item `downloadUrl` + `expiresAt`                    |
+| `DELETE /consultations/:id/attachments/:attachmentId` | P     | patient owner · **own upload** · `state=IN_SESSION` (re-checked atomically)            | —                                  | `204` · `403` other's file/role · `409` after the session (ADR-0028) |
+| `GET /attachments/:id/download?token=`                | —     | **signed token** (user-scoped, short-lived); re-runs the matrix + active-account check | —                                  | `200` file stream (`inline`)                                         |
 
 - The upload is rate-limited ([ADR-0011](adr/0011-rate-limiting.md)); a wrong/spoofed
   type is `415`, an over-size file `413`, and exceeding the per-consultation count
@@ -166,7 +169,7 @@ schema are in [audit-logging.md](audit-logging.md).
 `CONSULTATION_REQUESTED`, `CONSULTATION_ENQUEUED`, `CONSULTATION_CLAIMED`,
 `CONSULTATION_REQUEUED`, `CONSULTATION_REASSIGNED`, `CONSULTATION_STARTED`,
 `CONSULTATION_COMPLETED`, `CONSULTATION_CANCELLED`, `PRIORITY_CHANGED`,
-`MESSAGE_SENT`, `ATTACHMENT_UPLOADED`, `ATTACHMENT_ACCESSED`, `SUMMARY_DRAFTED`,
+`MESSAGE_SENT`, `ATTACHMENT_UPLOADED`, `ATTACHMENT_ACCESSED`, `ATTACHMENT_DELETED`, `SUMMARY_DRAFTED`,
 `SUMMARY_FINALIZED`, `SUMMARY_CHANGES_REQUESTED`, `SUMMARY_ADDENDUM_ADDED`
 (single source: `backend/src/audit/audit-events.ts`).
 
@@ -229,13 +232,14 @@ Each returns an ack `{ ok: boolean, error?: 'unauthorized'|'forbidden'|'not_foun
 | `summary:changes-requested` | `{ consultationId, note? }`                                      | a doctor returned a draft to its author to revise; to the drafter's personal room only (ADR-0024) |
 | `summary:updated`           | `{ consultationId, reason }`                                     | draft saved · changes requested · finalized · case ended; to `signoff` + the assignee (ADR-0027)  |
 | `attachment:created`        | `{ consultationId }`                                             | a file was shared; to the consultation room, whose members re-fetch the list (ADR-0027)           |
+| `attachment:removed`        | `{ consultationId }`                                             | the patient removed a file they shared; to the consultation room (ADR-0028)                       |
 | `position:updated`          | `{ consultationId, state, position }`                            | a patient's live "N ahead" changed (C2/FR-4)                                                      |
 | `presence:updated`          | `{ consultationId, participants: [{ userId, online }] }`         | a participant connected/disconnected/joined/left                                                  |
 
 `queue:updated` `reason` ∈ `enqueued | priority_changed | claimed | requeued | reassigned | completed | cancelled | state_changed`.
 `summary:updated` `reason` ∈ `drafted | changes_requested | finalized | ended`.
 
-`summary:updated` and `attachment:created` are **content-free signals**: no summary
+`summary:updated` and `attachment:created`/`removed` are **content-free signals**: no summary
 text, review note, filename or file rides them, and `summary:updated` is never sent
 to the patient (a draft is not theirs to see). Recipients reconcile through the REST
 endpoints above, which apply the authorization matrix as usual.

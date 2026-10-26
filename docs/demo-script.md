@@ -63,6 +63,10 @@ sequenceDiagram
     N->>N: start → /consultations/:id
     Pt->>N: chat (persisted + live both ways)
     N->>N: complete → draft summary
+    opt Doctor disagrees with the draft
+        D->>N: request changes (optional note) — stays Ended, nurse notified
+        N->>N: revise the draft
+    end
     D->>D: /consultations/:id/summary — finalize (doctor-only, immutable)
     Pt->>Pt: reads the finalized summary
 ```
@@ -80,12 +84,20 @@ sequenceDiagram
    (and vice-versa); the patient's position/status updates without a refresh.
 4. **Nurse** — **Complete** the consultation (→ Ended), then **draft** a summary.
    **Look for:** the nurse can draft but the **Finalize** action is not available to
-   them.
-5. **Doctor** — sign in as `doctor@vcp.local`, open the case's summary
-   (`/consultations/:id/summary`) and **Finalize** (→ Summarized). **Look for:**
+   them. The case now appears on the doctor's **Pending sign-off** worklist (ADR-0020).
+5. **Doctor — request changes (optional).** Sign in as `doctor@vcp.local`, open the case
+   (from **Pending sign-off** or `/consultations/:id`), review the draft and click
+   **Request changes** with a short note. **Look for:** the case stays **Ended** (not
+   finalized); in the nurse's window a **toast** announces it live, and — even if the
+   nurse missed the toast — a **"Changes requested" badge** appears on their **My
+   consultations** list and a **banner with the note** shows above the draft editor in the
+   room (ADR-0024/0025). The nurse edits the draft; autosaving **clears** the badge and
+   banner. (The note is in-app only, never written to the audit log.)
+6. **Doctor — finalize.** Once satisfied, **Finalize** (→ Summarized). **Look for:**
    finalize is **doctor-only**, and once finalized the summary is **immutable** —
-   corrections would be append-only addendums.
-6. **Patient** — refresh `/patient`/the summary. **Look for:** the patient can now read
+   corrections would be append-only addendums. The **finalizing doctor can still read**
+   the summary they signed, even on a nurse-run case they didn't run (ADR-0023).
+7. **Patient** — refresh `/patient`/the summary. **Look for:** the patient can now read
    the **finalized** summary.
 
 ---

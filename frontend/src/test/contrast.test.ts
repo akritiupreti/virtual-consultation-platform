@@ -58,6 +58,7 @@ const BADGES = [
   { name: 'patient', fg: '#0b57d0', bg: '#e3effd' },
   { name: 'nurse/doctor', fg: '#2b7a3d', bg: '#e6f4ea' },
   { name: 'admin', fg: '#7a3db8', bg: '#f3e8fd' },
+  { name: 'attention', fg: '#8a5000', bg: '#fff3e0' },
 ];
 
 describe('WCAG 2.1 AA colour contrast (design tokens)', () => {

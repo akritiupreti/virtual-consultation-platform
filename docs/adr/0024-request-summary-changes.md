@@ -88,13 +88,19 @@ flowchart TD
 - Exposure does not widen: the action is doctor-only, the case stays `ENDED`, and
   the note reaches only the drafter's own realtime channel. The audit trail gains
   a who/what/when record of each request.
-- **Known limitation (deferred):** the note is delivered in real time only, so a
+- ~~**Known limitation (deferred):** the note is delivered in real time only, so a
   drafter who is offline when changes are requested sees that the case is still
-  `ENDED` (on their assigned list) but not the specific feedback. This matches the
-  in-app-only, tab-open posture of [ADR-0021](0021-patient-in-app-notifications.md);
-  a durable "changes requested" indicator and persisted note are a future slice.
+  `ENDED` (on their assigned list) but not the specific feedback.~~ **Resolved by
+  [ADR-0025](0025-durable-changes-requested-indicator.md):** the request + note are
+  now persisted on the summary and surfaced to the drafter as a badge and a banner
+  until they revise, so a missed live toast no longer loses the request.
 - Covered by tests: the authorization-matrix unit spec (doctor-only; admin denied),
   the `SummariesService` unit spec (audit + drafter notification, note never
   audited, and the no-draft / finalized / wrong-state / non-doctor guards), and a
   sign-off e2e running the full doctor-returns → nurse-revises → doctor-finalizes
   loop plus a nurse-forbidden check.
+- The UI surfaces the action in the sign-off review (consultation room) and on the
+  summary screen, with a "Request changes" control and an optional note; the drafter
+  is told via a `summary:changes-requested` toast through the existing `aria-live`
+  region (a clinician counterpart to [ADR-0021](0021-patient-in-app-notifications.md)).
+  Frontend component tests cover the doctor action and the drafter toast.

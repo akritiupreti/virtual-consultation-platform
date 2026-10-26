@@ -231,6 +231,19 @@ describe('doctor sign-off of a nurse-run case (e2e)', () => {
     // The draft is untouched and still not finalized; no state transition happened.
     expect(requested.body.finalized).toBe(false);
     expect(requested.body.content).toBe('Likely viral URTI.');
+    // The request is persisted durably on the summary, with the note (ADR-0025).
+    expect(requested.body.changesRequestedAt).not.toBeNull();
+    expect(requested.body.changesRequestedNote).toBe('Please add the recorded blood pressure.');
+
+    // The nurse sees a durable "changes requested" marker on their assigned list,
+    // even without having caught the live toast.
+    const assigned = await request(server)
+      .get('/consultations/assigned')
+      .set('Authorization', bearer(nurseToken))
+      .expect(200);
+    expect(assigned.body.find((c: { id: string }) => c.id === consultationId)).toMatchObject({
+      summaryChangesRequested: true,
+    });
 
     // The case is still ENDED, so it remains on the sign-off worklist for later.
     const stillPending = await request(server)
@@ -250,13 +263,24 @@ describe('doctor sign-off of a nurse-run case (e2e)', () => {
     expect(changeEvent?.metadata).toMatchObject({ draftedBy: nurse.id });
     expect(JSON.stringify(changeEvent?.metadata ?? {})).not.toContain('blood pressure');
 
-    // The assigned nurse revises the draft (still allowed in ENDED).
+    // The assigned nurse revises the draft (still allowed in ENDED). Saving clears
+    // the pending change request (ADR-0025).
     const revised = await request(server)
       .post(`/consultations/${consultationId}/summary`)
       .set('Authorization', bearer(nurseToken))
       .send({ content: 'Likely viral URTI. BP 120/80 recorded.' })
       .expect(201);
     expect(revised.body.content).toContain('BP 120/80');
+    expect(revised.body.changesRequestedAt).toBeNull();
+    expect(revised.body.changesRequestedNote).toBeNull();
+
+    const assignedAfter = await request(server)
+      .get('/consultations/assigned')
+      .set('Authorization', bearer(nurseToken))
+      .expect(200);
+    expect(assignedAfter.body.find((c: { id: string }) => c.id === consultationId)).toMatchObject({
+      summaryChangesRequested: false,
+    });
 
     // The doctor is now satisfied and finalizes: ENDED → SUMMARIZED.
     const finalize = await request(server)

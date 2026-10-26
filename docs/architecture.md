@@ -269,7 +269,12 @@ sequenceDiagram
     C->>API: POST :id/messages
     C->>API: POST :id/complete → ENDED
     C->>API: POST :id/summary (draft)
+    opt Doctor disagrees with the draft (ADR-0024)
+        D->>API: POST :id/summary/request-changes (note) → notify drafter, stays ENDED
+        C->>API: POST :id/summary (re-draft)
+    end
     D->>API: POST :id/summary/finalize → SUMMARIZED (immutable)
+    D->>API: GET :id/summary (finalizing doctor retains read · ADR-0023)
     P->>API: GET :id/summary (finalized only)
 ```
 

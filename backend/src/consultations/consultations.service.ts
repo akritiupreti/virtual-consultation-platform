@@ -65,6 +65,8 @@ export interface AssignedConsultationView {
   startedAt: Date | null;
   endedAt: Date | null;
   summaryFinalized: boolean;
+  /** A doctor returned the draft for the drafter to revise, not yet re-drafted (ADR-0025). */
+  summaryChangesRequested: boolean;
 }
 
 /**
@@ -260,7 +262,7 @@ export class ConsultationsService {
       orderBy: { claimedAt: 'desc' },
       include: {
         intake: { select: { symptomCategory: true, chiefComplaint: true } },
-        summary: { select: { finalizedAt: true } },
+        summary: { select: { finalizedAt: true, changesRequestedAt: true } },
       },
     });
 
@@ -275,6 +277,9 @@ export class ConsultationsService {
       startedAt: row.startedAt,
       endedAt: row.endedAt,
       summaryFinalized: row.summary?.finalizedAt != null,
+      // Pending only while unfinalized — a finalized summary supersedes any request.
+      summaryChangesRequested:
+        row.summary?.changesRequestedAt != null && row.summary?.finalizedAt == null,
     }));
   }
 

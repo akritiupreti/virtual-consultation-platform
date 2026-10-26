@@ -25,6 +25,13 @@ export interface SummaryView {
   finalizedBy: string | null;
   finalizedAt: Date | null;
   finalized: boolean;
+  /**
+   * When a doctor last returned this draft for changes, and their note — a durable
+   * "please revise" signal for the drafter, cleared on the next draft (ADR-0025).
+   * Null once revised or if changes were never requested.
+   */
+  changesRequestedAt: Date | null;
+  changesRequestedNote: string | null;
   /** Append-only corrections, oldest first (FR-13, C5). */
   addenda: AddendumView[];
 }
@@ -60,10 +67,17 @@ export class SummariesService {
       throw new SummaryFinalizedException();
     }
 
+    // Saving a (re)draft clears any outstanding "please revise" request — the
+    // drafter has acted, so the doctor's badge/note is no longer pending (ADR-0025).
     const summary = await this.prisma.summary.upsert({
       where: { consultationId },
       create: { consultationId, draftedBy: user.id, content: dto.content },
-      update: { content: dto.content, draftedBy: user.id },
+      update: {
+        content: dto.content,
+        draftedBy: user.id,
+        changesRequestedAt: null,
+        changesRequestedNote: null,
+      },
     });
 
     await this.audit.record({
@@ -159,6 +173,14 @@ export class SummariesService {
       );
     }
 
+    // Persist a durable "please revise" marker + the note so the drafter still sees
+    // it if they were offline for the live nudge; cleared when they next draft
+    // (ADR-0025). The note is feedback for the drafter, never logged (invariant 6).
+    const updated = await this.prisma.summary.update({
+      where: { consultationId },
+      data: { changesRequestedAt: new Date(), changesRequestedNote: dto.note ?? null },
+    });
+
     await this.audit.record({
       actorId: user.id,
       eventType: AUDIT_EVENTS.SUMMARY_CHANGES_REQUESTED,
@@ -166,14 +188,14 @@ export class SummariesService {
       metadata: { draftedBy: summary.draftedBy },
     });
 
-    // Nudge the drafting clinician to revise. The optional note travels here only
-    // (ephemeral, to their personal room) — never into the audit log (invariant 6).
+    // Also nudge the drafting clinician live. The optional note travels here too
+    // (to their personal room) — never into the audit log (invariant 6).
     this.realtime.notifySummaryChangesRequested(summary.draftedBy, {
       consultationId,
       note: dto.note,
     });
 
-    return this.toView(summary);
+    return this.toView(updated);
   }
 
   /**
@@ -264,6 +286,8 @@ export class SummariesService {
       draftedBy: string;
       finalizedBy: string | null;
       finalizedAt: Date | null;
+      changesRequestedAt?: Date | null;
+      changesRequestedNote?: string | null;
     },
     addenda: AddendumView[] = [],
   ): SummaryView {
@@ -274,6 +298,8 @@ export class SummariesService {
       finalizedBy: summary.finalizedBy,
       finalizedAt: summary.finalizedAt,
       finalized: summary.finalizedAt != null,
+      changesRequestedAt: summary.changesRequestedAt ?? null,
+      changesRequestedNote: summary.changesRequestedNote ?? null,
       addenda: addenda.map((a) => ({
         id: a.id,
         authorId: a.authorId,

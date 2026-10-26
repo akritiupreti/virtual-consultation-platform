@@ -98,13 +98,13 @@ with a per-consultation count cap.
 
 ## Summary (clinical content — admin denied)
 
-| Method & path                                     | Roles | Guard                                                                                                             | Body                   | Success                      |
-| ------------------------------------------------- | ----- | ----------------------------------------------------------------------------------------------------------------- | ---------------------- | ---------------------------- |
-| `POST /consultations/:id/summary`                 | N,D   | assigned · `state∈{IN_SESSION,ENDED}` · not finalized                                                             | `{ content }` (1–8000) | `201` draft                  |
-| `POST /consultations/:id/summary/finalize`        | D     | `state=ENDED` (any doctor, incl. nurse-run cases)                                                                 | —                      | `200` finalized → SUMMARIZED |
-| `POST /consultations/:id/summary/request-changes` | D     | `state=ENDED` · draft not finalized (any doctor); returns draft to drafter, stays ENDED                           | `{ note? }` (1–2000)   | `200` draft (unchanged)      |
-| `POST /consultations/:id/summary/addendum`        | N,D   | clinician · `state=SUMMARIZED`                                                                                    | `{ content }` (1–8000) | `201` summary + addenda      |
-| `GET /consultations/:id/summary`                  | P,N,D | participant (patient only when finalized), _or_ doctor while `state=ENDED` (sign-off), _or_ the finalizing doctor | —                      | `200` summary + addenda      |
+| Method & path                                     | Roles | Guard                                                                                                             | Body                   | Success                                  |
+| ------------------------------------------------- | ----- | ----------------------------------------------------------------------------------------------------------------- | ---------------------- | ---------------------------------------- |
+| `POST /consultations/:id/summary`                 | N,D   | assigned · `state∈{IN_SESSION,ENDED}` · not finalized                                                             | `{ content }` (1–8000) | `201` draft                              |
+| `POST /consultations/:id/summary/finalize`        | D     | `state=ENDED` (any doctor, incl. nurse-run cases)                                                                 | —                      | `200` finalized → SUMMARIZED             |
+| `POST /consultations/:id/summary/request-changes` | D     | `state=ENDED` · draft not finalized (any doctor); returns draft to drafter, stays ENDED                           | `{ note? }` (1–2000)   | `200` draft (+ changes-requested marker) |
+| `POST /consultations/:id/summary/addendum`        | N,D   | clinician · `state=SUMMARIZED`                                                                                    | `{ content }` (1–8000) | `201` summary + addenda                  |
+| `GET /consultations/:id/summary`                  | P,N,D | participant (patient only when finalized), _or_ doctor while `state=ENDED` (sign-off), _or_ the finalizing doctor | —                      | `200` summary + addenda                  |
 
 A finalized summary is **immutable**; corrections are **append-only addendums**
 (FR-13, C5) — the summary content itself is never mutated. Attempting to re-draft a
@@ -202,13 +202,14 @@ Each returns an ack `{ ok: boolean, error?: 'unauthorized'|'forbidden'|'not_foun
 
 ### Server → client
 
-| Event                  | Payload                                                          | Trigger                                                                     |
-| ---------------------- | ---------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| `queue:updated`        | `{ reason, consultationId? }`                                    | enqueue · priority change · claim · requeue · complete · cancel (FR-18/C18) |
-| `consultation:updated` | `{ consultationId, state }`                                      | any state change on the consultation                                        |
-| `message:created`      | `{ consultationId, message: { id, senderId, body, createdAt } }` | a new message (private room only; body is allowed here)                     |
-| `position:updated`     | `{ consultationId, state, position }`                            | a patient's live "N ahead" changed (C2/FR-4)                                |
-| `presence:updated`     | `{ consultationId, participants: [{ userId, online }] }`         | a participant connected/disconnected/joined/left                            |
+| Event                       | Payload                                                          | Trigger                                                                                           |
+| --------------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `queue:updated`             | `{ reason, consultationId? }`                                    | enqueue · priority change · claim · requeue · complete · cancel (FR-18/C18)                       |
+| `consultation:updated`      | `{ consultationId, state }`                                      | any state change on the consultation                                                              |
+| `message:created`           | `{ consultationId, message: { id, senderId, body, createdAt } }` | a new message (private room only; body is allowed here)                                           |
+| `summary:changes-requested` | `{ consultationId, note? }`                                      | a doctor returned a draft to its author to revise; to the drafter's personal room only (ADR-0024) |
+| `position:updated`          | `{ consultationId, state, position }`                            | a patient's live "N ahead" changed (C2/FR-4)                                                      |
+| `presence:updated`          | `{ consultationId, participants: [{ userId, online }] }`         | a participant connected/disconnected/joined/left                                                  |
 
 `reason` ∈ `enqueued | priority_changed | claimed | requeued | completed | cancelled | state_changed`.
 

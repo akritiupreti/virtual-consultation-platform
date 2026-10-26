@@ -20,6 +20,9 @@ export default function ConsultationRoom(): JSX.Element {
   // a confirmation that the draft was returned.
   const [changeNote, setChangeNote] = useState('');
   const [changeNotice, setChangeNotice] = useState<string | null>(null);
+  // A doctor's outstanding "please revise" request on this draft, for the drafter
+  // (ADR-0025). Loaded with the draft, cleared once the drafter saves a revision.
+  const [requestedChange, setRequestedChange] = useState<{ note: string | null } | null>(null);
   // Draft autosave status (the draft persists on its own — there is no Save button).
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   // The last value successfully persisted, so we neither re-save an unchanged draft
@@ -74,6 +77,7 @@ export default function ConsultationRoom(): JSX.Element {
       .then((s) => {
         setDraft(s.content);
         lastSaved.current = s.content.trim();
+        setRequestedChange(s.changesRequestedAt ? { note: s.changesRequestedNote } : null);
       })
       .catch(() => undefined);
   }, [id, isClinician]);
@@ -103,6 +107,8 @@ export default function ConsultationRoom(): JSX.Element {
           await api.draftSummary(id, trimmed);
           lastSaved.current = trimmed;
           setSaveState('saved');
+          // Saving a revision resolves any outstanding change request (ADR-0025).
+          setRequestedChange(null);
         } catch {
           setSaveState('error');
         }
@@ -256,6 +262,14 @@ export default function ConsultationRoom(): JSX.Element {
               <Link to={`/consultations/${id}/summary`}>View finalized summary</Link>
             )}
           </div>
+
+          {canEditDraft && requestedChange && (
+            <p className="banner-attention" role="status" style={{ marginTop: 12 }}>
+              <strong>A doctor asked you to revise this summary.</strong>
+              {requestedChange.note ? ` “${requestedChange.note}”` : ''} Edit the draft below;
+              saving your revision clears this request.
+            </p>
+          )}
 
           {canEditDraft && (
             <div style={{ marginTop: 12 }}>

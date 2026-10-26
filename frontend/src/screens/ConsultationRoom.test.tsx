@@ -121,6 +121,24 @@ describe('ConsultationRoom screen', () => {
     expect(mock.finalizeSummary).toHaveBeenCalledWith('c-1');
   });
 
+  it('shows the drafting nurse a durable revision-request banner with the note (ADR-0025)', async () => {
+    mock.getConsultation.mockResolvedValue(
+      fixtures.consultation({ state: 'ENDED', claimedBy: 'u-nurse' }),
+    );
+    mock.getSummary.mockResolvedValue(
+      fixtures.summary({
+        finalized: false,
+        content: 'Likely viral URTI.',
+        draftedBy: 'u-nurse',
+        changesRequestedAt: '2026-10-22T09:25:00.000Z',
+        changesRequestedNote: 'Please add the BP reading.',
+      }),
+    );
+    const { findByText } = render(fixtures.users.nurse);
+    expect(await findByText(/a doctor asked you to revise this summary/i)).toBeInTheDocument();
+    expect(await findByText(/please add the bp reading/i)).toBeInTheDocument();
+  });
+
   it('lets a reviewing doctor return a nurse-run draft for changes with a note (ADR-0024)', async () => {
     mock.getConsultation.mockResolvedValue(
       fixtures.consultation({ state: 'ENDED', claimedBy: 'u-nurse' }),

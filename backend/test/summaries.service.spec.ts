@@ -190,8 +190,9 @@ describe('SummariesService (unit)', () => {
     await expect(service.get(doctor, 'c-1')).rejects.toBeInstanceOf(ForbiddenActionException);
   });
 
-  it('requests changes on an ENDED draft: audits and notifies the drafter (ADR-0024)', async () => {
+  it('requests changes on an ENDED draft: persists, audits and notifies the drafter (ADR-0024/0025)', async () => {
     const prisma = makePrisma();
+    const now = new Date();
     prisma.consultation.findUnique.mockResolvedValue(consultation(ConsultationState.ENDED));
     prisma.summary.findUnique.mockResolvedValue({
       consultationId: 'c-1',
@@ -200,12 +201,30 @@ describe('SummariesService (unit)', () => {
       finalizedBy: null,
       finalizedAt: null,
     });
+    prisma.summary.update.mockResolvedValue({
+      consultationId: 'c-1',
+      content: 'Likely viral URTI.',
+      draftedBy: 'nurse',
+      finalizedBy: null,
+      finalizedAt: null,
+      changesRequestedAt: now,
+      changesRequestedNote: 'Please add the BP reading.',
+    });
     const { service, audit, realtime } = build(prisma);
     const view = await service.requestChanges(doctor, 'c-1', {
       note: 'Please add the BP reading.',
     });
 
     expect(view.finalized).toBe(false);
+    // The durable marker + note are persisted on the summary (ADR-0025).
+    expect(prisma.summary.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { consultationId: 'c-1' },
+        data: expect.objectContaining({ changesRequestedNote: 'Please add the BP reading.' }),
+      }),
+    );
+    expect(view.changesRequestedAt).toBe(now);
+    expect(view.changesRequestedNote).toBe('Please add the BP reading.');
     expect(audit.record).toHaveBeenCalledWith(
       expect.objectContaining({
         eventType: 'SUMMARY_CHANGES_REQUESTED',
@@ -213,13 +232,38 @@ describe('SummariesService (unit)', () => {
         metadata: { draftedBy: 'nurse' },
       }),
     );
-    // The drafter is notified; the note travels only in the realtime payload.
+    // The drafter is also notified live; the note travels in the realtime payload.
     expect(realtime.notifySummaryChangesRequested).toHaveBeenCalledWith('nurse', {
       consultationId: 'c-1',
       note: 'Please add the BP reading.',
     });
     // The note is never written to the audit log (invariant 6).
     expect(JSON.stringify(audit.record.mock.calls)).not.toContain('BP reading');
+  });
+
+  it('clears a pending change request when the drafter re-drafts (ADR-0025)', async () => {
+    const prisma = makePrisma();
+    prisma.consultation.findUnique.mockResolvedValue(consultation(ConsultationState.ENDED));
+    prisma.summary.findUnique.mockResolvedValue(null);
+    prisma.summary.upsert.mockResolvedValue({
+      consultationId: 'c-1',
+      content: 'revised',
+      draftedBy: 'doc',
+      finalizedBy: null,
+      finalizedAt: null,
+      changesRequestedAt: null,
+      changesRequestedNote: null,
+    });
+    const { service } = build(prisma);
+    await service.draft(doctor, 'c-1', { content: 'revised' });
+    expect(prisma.summary.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        update: expect.objectContaining({
+          changesRequestedAt: null,
+          changesRequestedNote: null,
+        }),
+      }),
+    );
   });
 
   it('refuses to request changes when there is no drafted summary', async () => {

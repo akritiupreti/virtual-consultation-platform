@@ -12,6 +12,7 @@ import { AUDIT_EVENTS } from '../audit/audit-events';
 import { AuditService } from '../audit/audit.service';
 import { Action } from '../common/authz/authorization-matrix';
 import { ActingUser, authorizeConsultationAction } from '../common/authz/policy';
+import { ForbiddenActionException } from '../common/errors/domain-exceptions';
 import { PrismaService } from '../prisma/prisma.service';
 import { RealtimeService } from '../realtime/realtime.service';
 import { AttachmentStorageService } from './attachment-storage.service';
@@ -151,6 +152,54 @@ export class AttachmentsService {
         expiresAt,
       };
     });
+  }
+
+  /**
+   * The patient removes a file they shared by mistake (ADR-0028). Patient-owner only
+   * (matrix: DELETE_ATTACHMENT), only a file they uploaded themselves, and only while
+   * the session is IN_SESSION — after it ends, shared files are part of the record.
+   * The row is deleted with a conditional delete that re-checks the state in the
+   * database, so a removal racing the end of the session cannot slip through. The
+   * stored bytes are then deleted too (they may be a wrong, private photo). Audited
+   * as ATTACHMENT_DELETED — who/what/when only, never the filename.
+   */
+  async remove(user: ActingUser, consultationId: string, attachmentId: string): Promise<void> {
+    const consultation = await this.loadConsultationOr404(consultationId);
+    authorizeConsultationAction(user, consultation, Action.DELETE_ATTACHMENT);
+
+    const attachment = await this.prisma.attachment.findUnique({ where: { id: attachmentId } });
+    if (!attachment || attachment.consultationId !== consultationId) {
+      throw new NotFoundException('Attachment not found');
+    }
+    if (attachment.uploadedBy !== user.id) {
+      // A patient may only take back their own files, never a clinician's.
+      throw new ForbiddenActionException();
+    }
+
+    const removed = await this.prisma.attachment.deleteMany({
+      where: {
+        id: attachmentId,
+        consultationId,
+        consultation: { state: ConsultationState.IN_SESSION },
+      },
+    });
+    if (removed.count === 0) {
+      throw new ConflictException('Files can only be removed while the session is in progress');
+    }
+
+    await this.audit.record({
+      actorId: user.id,
+      eventType: AUDIT_EVENTS.ATTACHMENT_DELETED,
+      consultationId,
+      metadata: {
+        attachmentId,
+        mimeType: attachment.mimeType,
+        sizeBytes: attachment.sizeBytes,
+      },
+    });
+    await this.storage.remove(attachment.storageKey);
+    // The clinician's open room drops the file from its list without a refresh.
+    this.realtime.notifyAttachmentRemoved(consultationId);
   }
 
   /**

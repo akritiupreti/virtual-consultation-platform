@@ -91,6 +91,21 @@ export interface PendingSignoffView {
   changesRequested: boolean;
 }
 
+/**
+ * A doctor's own sign-off history row (ADR-0029): a case whose summary this doctor
+ * finalized. Minimal, like the worklist — never the summary text. The doctor reads
+ * the signed summary itself through VIEW_SUMMARY's finalizing-doctor grant (ADR-0023).
+ */
+export interface SignedOffView {
+  id: string;
+  priority: Priority;
+  symptomCategory: string | null;
+  complaintSummary: string;
+  endedAt: Date | null;
+  finalizedAt: Date | null;
+  draftedBy: string;
+}
+
 /** Full participant view (owner or assigned clinician); includes intake. */
 export interface ConsultationView {
   id: string;
@@ -330,6 +345,35 @@ export class ConsultationsService {
       draftedBy: row.summary?.draftedBy ?? '',
       draftedAt: row.summary?.createdAt ?? null,
       changesRequested: row.summary?.changesRequestedAt != null,
+    }));
+  }
+
+  /**
+   * The calling doctor's completed sign-offs, newest first (ADR-0029): every case
+   * whose summary they finalized, whether a nurse or they ran it. Scoped strictly to
+   * `finalizedBy = caller` — exactly the summaries ADR-0023 already lets them read —
+   * so it widens nothing; it only makes their own final reviews findable again.
+   */
+  async getSignedOff(user: ActingUser): Promise<SignedOffView[]> {
+    const rows = await this.prisma.consultation.findMany({
+      where: { summary: { is: { finalizedBy: user.id } } },
+      orderBy: { summary: { finalizedAt: 'desc' } },
+      take: 200,
+      include: {
+        intake: { select: { symptomCategory: true, chiefComplaint: true } },
+        summary: { select: { draftedBy: true, finalizedAt: true } },
+      },
+    });
+
+    return rows.map((row) => ({
+      id: row.id,
+      priority: row.priority,
+      symptomCategory: row.intake?.symptomCategory ?? null,
+      // A short complaint label only — not the full clinical narrative.
+      complaintSummary: (row.intake?.chiefComplaint ?? '').slice(0, 100),
+      endedAt: row.endedAt,
+      finalizedAt: row.summary?.finalizedAt ?? null,
+      draftedBy: row.summary?.draftedBy ?? '',
     }));
   }
 

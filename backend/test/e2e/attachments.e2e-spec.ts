@@ -169,4 +169,53 @@ describe('Attachments: signed-URL access & privacy (e2e)', () => {
       .expect(200);
     await upload(patientToken).expect(409);
   });
+
+  // ── Removing a file shared by mistake (ADR-0028) ───────────────────────────
+
+  function remove(token: string, attachmentId: string) {
+    return request(server)
+      .delete(`/consultations/${consultationId}/attachments/${attachmentId}`)
+      .set('Authorization', bearer(token));
+  }
+
+  it('the patient removes their own file during the session; it is gone and audited', async () => {
+    const { body: uploaded } = await upload(patientToken).expect(201);
+    await remove(patientToken, uploaded.id).expect(204);
+
+    const list = await request(server)
+      .get(`/consultations/${consultationId}/attachments`)
+      .set('Authorization', bearer(nurseToken))
+      .expect(200);
+    expect(list.body).toHaveLength(0);
+
+    const audit = await prisma.auditLog.findFirst({
+      where: { consultationId, eventType: AUDIT_EVENTS.ATTACHMENT_DELETED },
+    });
+    expect(audit?.metadata).toMatchObject({ attachmentId: uploaded.id });
+    // Who/what/when only — never the filename.
+    expect(JSON.stringify(audit?.metadata ?? {})).not.toContain('photo.png');
+  });
+
+  it("a clinician cannot remove files, and a patient cannot remove the clinician's (403)", async () => {
+    const { body: patientFile } = await upload(patientToken).expect(201);
+    const { body: nurseFile } = await upload(nurseToken, PNG, 'nurse.png').expect(201);
+    await remove(nurseToken, patientFile.id).expect(403);
+    await remove(nurseToken, nurseFile.id).expect(403);
+    await remove(patientToken, nurseFile.id).expect(403);
+    await remove(otherPatientToken, patientFile.id).expect(403);
+  });
+
+  it('refuses removal once the session has ended (409) — the file stays on the record', async () => {
+    const { body: uploaded } = await upload(patientToken).expect(201);
+    await request(server)
+      .post(`/consultations/${consultationId}/complete`)
+      .set('Authorization', bearer(nurseToken))
+      .expect(200);
+    await remove(patientToken, uploaded.id).expect(409);
+    const list = await request(server)
+      .get(`/consultations/${consultationId}/attachments`)
+      .set('Authorization', bearer(patientToken))
+      .expect(200);
+    expect(list.body).toHaveLength(1);
+  });
 });

@@ -70,7 +70,6 @@ const BADGES = [
   { name: 'priority emergency', fg: '#a8261d', bg: '#fdeceb' },
   { name: 'segmented selected', fg: '#1557c0', bg: '#eaf2fe' },
   { name: 'info banner', fg: '#0b4aa8', bg: '#eef5fe' },
-  { name: 'danger banner', fg: '#a8261d', bg: '#fdf3f2' },
   { name: 'nav link on brand bar', fg: '#ffffff', bg: '#1557c0' },
 ];
 

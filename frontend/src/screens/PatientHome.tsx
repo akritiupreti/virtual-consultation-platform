@@ -190,10 +190,6 @@ export default function PatientHome(): JSX.Element {
   const requestForm = (
     <section className="card" aria-labelledby="request-heading">
       <h2 id="request-heading">Request a consultation</h2>
-      <p className="banner banner-danger">
-        <strong>Not for emergencies.</strong> If you think you need emergency care, call your local
-        emergency number now.
-      </p>
       <form onSubmit={submit}>
         <label htmlFor="cc">What is the main problem?</label>
         <textarea

@@ -5,7 +5,19 @@ import * as fixtures from '../test/fixtures';
 import { renderWithProviders } from '../test/render';
 import PendingSignoff from './PendingSignoff';
 
-const mock = vi.hoisted(() => ({ getPendingSignoff: vi.fn() }));
+const mock = vi.hoisted(() => ({ getPendingSignoff: vi.fn(), getSignedOff: vi.fn() }));
+
+const signedOff = [
+  {
+    id: 'c-9',
+    priority: 'ROUTINE' as const,
+    symptomCategory: 'Dermatology',
+    complaintSummary: 'Signed complaint (synthetic)',
+    endedAt: '2026-10-21T09:00:00.000Z',
+    finalizedAt: '2026-10-21T09:30:00.000Z',
+    draftedBy: 'u-nurse',
+  },
+];
 vi.mock('../lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../lib/api')>();
   return { ...actual, api: { ...actual.api, ...mock } };
@@ -26,7 +38,38 @@ function render() {
 }
 
 describe('PendingSignoff (doctor)', () => {
-  beforeEach(() => mock.getPendingSignoff.mockReset());
+  beforeEach(() => {
+    mock.getPendingSignoff.mockReset();
+    mock.getSignedOff.mockReset().mockResolvedValue([]);
+  });
+
+  it("keeps the doctor's completed sign-offs under Completed, linking to the summary (ADR-0029)", async () => {
+    mock.getPendingSignoff.mockResolvedValue(fixtures.pendingSignoff);
+    mock.getSignedOff.mockResolvedValue(signedOff);
+    const { user, findAllByRole, getByRole, getAllByRole, getByText, queryByText } = render();
+
+    // Active (default): only cases awaiting sign-off.
+    expect(await findAllByRole('link', { name: /review & sign off/i })).toHaveLength(2);
+    expect(queryByText('Signed complaint (synthetic)')).not.toBeInTheDocument();
+
+    await user.click(getByRole('button', { name: /completed/i }));
+    expect(getByText('Signed complaint (synthetic)')).toBeInTheDocument();
+    expect(getByText('Signed off')).toBeInTheDocument();
+    expect(getByRole('link', { name: /view summary/i })).toHaveAttribute(
+      'href',
+      '/consultations/c-9/summary',
+    );
+
+    await user.click(getByRole('button', { name: /^all/i }));
+    expect(getAllByRole('link', { name: /review & sign off|view summary/i })).toHaveLength(3);
+  });
+
+  it('shows an empty Completed list before any sign-off', async () => {
+    mock.getPendingSignoff.mockResolvedValue([]);
+    const { user, findByRole, findByText } = render();
+    await user.click(await findByRole('button', { name: /completed/i }));
+    expect(await findByText(/not signed off any consultations yet/i)).toBeInTheDocument();
+  });
 
   it('lists cases awaiting sign-off, each linking to the room to review & finalize', async () => {
     mock.getPendingSignoff.mockResolvedValue(fixtures.pendingSignoff);

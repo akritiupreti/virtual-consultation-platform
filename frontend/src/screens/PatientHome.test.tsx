@@ -28,13 +28,13 @@ describe('PatientHome screen', () => {
   });
 
   it('renders the request form and the current consultation with its queue position', async () => {
-    const { findByText, getByLabelText, getByText, findByRole } = render();
+    const { findByText, getByLabelText, getByText, queryByText, findByRole } = render();
     expect(await findByRole('heading', { name: /request a consultation/i })).toBeInTheDocument();
     expect(getByLabelText(/main problem/i)).toBeInTheDocument();
     expect(await findByText(/2 people ahead of you/i)).toBeInTheDocument();
     expect(getByText(/sample complaint \(synthetic\)/i)).toBeInTheDocument();
-    // Safety: the form says it is not for emergencies.
-    expect(getByText(/not for emergencies/i)).toBeInTheDocument();
+    // The emergency notice was removed at the product owner's request.
+    expect(queryByText(/not for emergencies/i)).not.toBeInTheDocument();
   });
 
   it('separates finished consultations under Past', async () => {

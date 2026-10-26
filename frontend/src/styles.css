@@ -940,12 +940,6 @@ td {
   border-color: #c9ddfa;
 }
 
-.banner-danger {
-  color: #a8261d;
-  background: #fdf3f2;
-  border-color: #f3c9c5;
-}
-
 /* Attention banner — a doctor returned this draft for changes (ADR-0025). */
 .banner-attention {
   color: #8a5000;
@@ -1070,13 +1064,19 @@ td {
 }
 
 .file-list li {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.file-row {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  justify-content: space-between;
   gap: 2px 12px;
-  padding: 8px 0;
-  border-bottom: 1px solid var(--border);
+}
+
+.file-row .muted {
+  margin-left: auto;
 }
 
 .file-list li:last-child {

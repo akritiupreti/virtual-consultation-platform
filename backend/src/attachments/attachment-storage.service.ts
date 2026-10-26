@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'node:crypto';
 import { createReadStream, type ReadStream } from 'node:fs';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, unlink, writeFile } from 'node:fs/promises';
 import { isAbsolute, join, resolve } from 'node:path';
 
 /**
@@ -31,6 +31,21 @@ export class AttachmentStorageService {
     const storageKey = randomUUID();
     await writeFile(this.pathFor(storageKey), buffer, { flag: 'wx' });
     return storageKey;
+  }
+
+  /**
+   * Delete a stored object. Best-effort: a file that is already gone is fine, and
+   * any other failure is logged rather than thrown — the database row (the record
+   * of the file) has already been removed, which is what makes it unreachable.
+   */
+  async remove(storageKey: string): Promise<void> {
+    try {
+      await unlink(this.pathFor(storageKey));
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+        this.log.warn(`Could not delete stored attachment object: ${(err as Error).message}`);
+      }
+    }
   }
 
   /** Open a read stream for a stored object by its key. */

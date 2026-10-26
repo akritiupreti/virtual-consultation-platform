@@ -37,6 +37,8 @@ export const WS_EVENTS = {
   SUMMARY_UPDATED: 'summary:updated',
   /** A file was attached in a consultation room; members reconcile via REST. */
   ATTACHMENT_CREATED: 'attachment:created',
+  /** The patient removed a file they shared (ADR-0028); members re-fetch the list. */
+  ATTACHMENT_REMOVED: 'attachment:removed',
   /** A patient's live "N ahead" position changed. */
   POSITION_UPDATED: 'position:updated',
   /** Presence of a consultation's participants changed. */

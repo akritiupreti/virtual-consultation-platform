@@ -15,14 +15,20 @@ import { AttachmentsService } from '../src/attachments/attachments.service';
 function build() {
   const prisma = {
     consultation: { findUnique: jest.fn() },
-    attachment: { count: jest.fn(), create: jest.fn(), findUnique: jest.fn(), findMany: jest.fn() },
+    attachment: {
+      count: jest.fn(),
+      create: jest.fn(),
+      findUnique: jest.fn(),
+      findMany: jest.fn(),
+      deleteMany: jest.fn(),
+    },
     user: { findUnique: jest.fn() },
   };
   const audit = { record: jest.fn().mockResolvedValue(undefined) };
-  const storage = { save: jest.fn(), openStream: jest.fn() };
+  const storage = { save: jest.fn(), openStream: jest.fn(), remove: jest.fn() };
   const signedUrl = { verify: jest.fn(), sign: jest.fn(), ttl: 300 };
   const config = { get: jest.fn().mockReturnValue(undefined) };
-  const realtime = { notifyAttachmentCreated: jest.fn() };
+  const realtime = { notifyAttachmentCreated: jest.fn(), notifyAttachmentRemoved: jest.fn() };
   const service = new AttachmentsService(
     prisma as never,
     audit as never,
@@ -112,6 +118,75 @@ describe('AttachmentsService (unit)', () => {
       expect.objectContaining({ eventType: 'ATTACHMENT_UPLOADED' }),
     );
     expect(realtime.notifyAttachmentCreated).toHaveBeenCalledWith('c-1');
+  });
+
+  describe('remove (ADR-0028)', () => {
+    const own = {
+      id: 'a-1',
+      consultationId: 'c-1',
+      uploadedBy: 'pat',
+      mimeType: 'image/png',
+      sizeBytes: 12,
+      storageKey: 'key-1',
+    };
+
+    it('lets the patient remove their own file during the session, then audits and signals', async () => {
+      const { service, prisma, storage, audit, realtime } = build();
+      prisma.consultation.findUnique.mockResolvedValue(inSession);
+      prisma.attachment.findUnique.mockResolvedValue(own);
+      prisma.attachment.deleteMany.mockResolvedValue({ count: 1 });
+      await service.remove(participant, 'c-1', 'a-1');
+      // The delete re-checks IN_SESSION in the database (race-safe).
+      expect(prisma.attachment.deleteMany).toHaveBeenCalledWith({
+        where: { id: 'a-1', consultationId: 'c-1', consultation: { state: 'IN_SESSION' } },
+      });
+      expect(storage.remove).toHaveBeenCalledWith('key-1');
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventType: 'ATTACHMENT_DELETED',
+          metadata: { attachmentId: 'a-1', mimeType: 'image/png', sizeBytes: 12 },
+        }),
+      );
+      expect(realtime.notifyAttachmentRemoved).toHaveBeenCalledWith('c-1');
+    });
+
+    it('refuses once the session has ended (409) and keeps the file', async () => {
+      const { service, prisma, storage } = build();
+      prisma.consultation.findUnique.mockResolvedValue(inSession);
+      prisma.attachment.findUnique.mockResolvedValue(own);
+      prisma.attachment.deleteMany.mockResolvedValue({ count: 0 }); // state moved on
+      await expect(service.remove(participant, 'c-1', 'a-1')).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+      expect(storage.remove).not.toHaveBeenCalled();
+    });
+
+    it("refuses a file the patient did not upload (a clinician's) — 403", async () => {
+      const { service, prisma } = build();
+      prisma.consultation.findUnique.mockResolvedValue(inSession);
+      prisma.attachment.findUnique.mockResolvedValue({ ...own, uploadedBy: 'doc' });
+      await expect(service.remove(participant, 'c-1', 'a-1')).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
+      expect(prisma.attachment.deleteMany).not.toHaveBeenCalled();
+    });
+
+    it('denies clinicians by role, even their own uploads (matrix)', async () => {
+      const { service, prisma } = build();
+      prisma.consultation.findUnique.mockResolvedValue(inSession);
+      await expect(
+        service.remove({ id: 'doc', role: Role.DOCTOR }, 'c-1', 'a-1'),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('404s a file from another consultation', async () => {
+      const { service, prisma } = build();
+      prisma.consultation.findUnique.mockResolvedValue(inSession);
+      prisma.attachment.findUnique.mockResolvedValue({ ...own, consultationId: 'c-other' });
+      await expect(service.remove(participant, 'c-1', 'a-1')).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+    });
   });
 
   it('lists attachments with freshly-minted signed URLs', async () => {

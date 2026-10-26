@@ -100,6 +100,12 @@ export class RealtimeService {
     this.server?.to(consultationRoom(consultationId)).emit(WS_EVENTS.ATTACHMENT_CREATED, payload);
   }
 
+  /** A file was removed; room members re-fetch the list (content-free, ADR-0028). */
+  notifyAttachmentRemoved(consultationId: string): void {
+    const payload: AttachmentCreatedPayload = { consultationId };
+    this.server?.to(consultationRoom(consultationId)).emit(WS_EVENTS.ATTACHMENT_REMOVED, payload);
+  }
+
   /**
    * A consultation's state changed. Emitted to the consultation room (both
    * participants), to the patient's personal room so their status view reconciles

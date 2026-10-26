@@ -245,6 +245,39 @@ describe('ConsultationsService (unit)', () => {
     expect(realtime.notifyQueueChanged).not.toHaveBeenCalled();
   });
 
+  it("lists only the calling doctor's own sign-offs, newest first (ADR-0029)", async () => {
+    const { service, prisma } = build();
+    prisma.consultation.findMany.mockResolvedValue([
+      row({
+        id: 'c-7',
+        state: ConsultationState.SUMMARIZED,
+        endedAt: new Date('2026-10-22T09:00:00Z'),
+        intake: { symptomCategory: 'RESPIRATORY', chiefComplaint: 'Cough' },
+        summary: { draftedBy: 'nurse-1', finalizedAt: new Date('2026-10-22T09:30:00Z') },
+      }),
+    ]);
+    const rows = await service.getSignedOff(doctor);
+    expect(prisma.consultation.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { summary: { is: { finalizedBy: 'doc' } } },
+        orderBy: { summary: { finalizedAt: 'desc' } },
+      }),
+    );
+    expect(rows).toEqual([
+      {
+        id: 'c-7',
+        priority: expect.anything(),
+        symptomCategory: 'RESPIRATORY',
+        complaintSummary: 'Cough',
+        endedAt: new Date('2026-10-22T09:00:00Z'),
+        finalizedAt: new Date('2026-10-22T09:30:00Z'),
+        draftedBy: 'nurse-1',
+      },
+    ]);
+    // Minimal view must never carry the summary content.
+    expect(JSON.stringify(rows)).not.toContain('content');
+  });
+
   it('lists pending sign-off cases with minimal detail, oldest-ended first (no summary text)', async () => {
     const { service, prisma } = build();
     prisma.consultation.findMany.mockResolvedValue([

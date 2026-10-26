@@ -78,6 +78,9 @@ export default function ConsultationRoom(): JSX.Element {
 
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  // The file the patient is confirming removal of (ADR-0028), and its in-flight state.
+  const [removingId, setRemovingId] = useState<string | null>(null);
+  const [removeBusy, setRemoveBusy] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const messageList = useRef<HTMLDivElement>(null);
 
@@ -329,6 +332,23 @@ export default function ConsultationRoom(): JSX.Element {
     }
   }
 
+  // The patient takes back a file they shared by mistake — only during the session;
+  // after it ends the file is part of the record (ADR-0028).
+  async function removeAttachment(attachmentId: string): Promise<void> {
+    setUploadError(null);
+    setRemoveBusy(true);
+    try {
+      await api.deleteAttachment(id, attachmentId);
+      setRemovingId(null);
+      setAttachments((prev) => prev.filter((a) => a.id !== attachmentId));
+    } catch (err) {
+      setUploadError(err instanceof ApiError ? err.message : 'Could not remove the file');
+      await loadAttachments();
+    } finally {
+      setRemoveBusy(false);
+    }
+  }
+
   // Signed links are short-lived; if one has expired, mint a fresh one first.
   async function openAttachment(event: MouseEvent, a: Attachment): Promise<void> {
     if (new Date(a.expiresAt).getTime() > Date.now() + 5000) {
@@ -577,22 +597,53 @@ export default function ConsultationRoom(): JSX.Element {
                 </p>
               ) : (
                 <ul className="file-list">
-                  {attachments.map((a) => (
-                    <li key={a.id}>
-                      <a
-                        href={attachmentHref(a)}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        onClick={(e) => void openAttachment(e, a)}
-                      >
-                        {a.filename}
-                      </a>
-                      <span className="muted">
-                        {formatBytes(a.sizeBytes)} · {senderLabel(a.uploadedBy)} ·{' '}
-                        {formatTime(a.createdAt)}
-                      </span>
-                    </li>
-                  ))}
+                  {attachments.map((a) => {
+                    const canRemove =
+                      inSession && user?.role === 'PATIENT' && a.uploadedBy === user.id;
+                    return (
+                      <li key={a.id}>
+                        <div className="file-row">
+                          <a
+                            href={attachmentHref(a)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => void openAttachment(e, a)}
+                          >
+                            {a.filename}
+                          </a>
+                          <span className="muted">
+                            {formatBytes(a.sizeBytes)} · {senderLabel(a.uploadedBy)} ·{' '}
+                            {formatTime(a.createdAt)}
+                          </span>
+                          {canRemove && removingId !== a.id && (
+                            <button
+                              type="button"
+                              className="link-btn danger-text btn-sm"
+                              aria-label={`Remove ${a.filename}`}
+                              onClick={() => setRemovingId(a.id)}
+                            >
+                              Remove
+                            </button>
+                          )}
+                        </div>
+                        {canRemove && removingId === a.id && (
+                          <ConfirmPanel
+                            label={`Confirm remove ${a.filename}`}
+                            confirmLabel="Remove file"
+                            danger
+                            busy={removeBusy}
+                            onConfirm={() => void removeAttachment(a.id)}
+                            onCancel={() => setRemovingId(null)}
+                          >
+                            <p>
+                              Remove <strong>{a.filename}</strong>? The clinician will no longer see
+                              it. Files can only be removed during the session.
+                            </p>
+                          </ConfirmPanel>
+                        )}
+                      </li>
+                    );
+                  })}
                 </ul>
               )}
             </section>

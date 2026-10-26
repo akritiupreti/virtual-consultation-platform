@@ -242,6 +242,7 @@ export function useConsultationRoom(id: string, handlers: RoomHandlers): void {
     s.on('consultation:updated', onUpdated);
     s.on('presence:updated', onPresence);
     s.on('attachment:created', onAttachment);
+    s.on('attachment:removed', onAttachment);
     return () => {
       s.emit('leave:consultation', { consultationId: id });
       s.off('connect', join);
@@ -249,6 +250,7 @@ export function useConsultationRoom(id: string, handlers: RoomHandlers): void {
       s.off('consultation:updated', onUpdated);
       s.off('presence:updated', onPresence);
       s.off('attachment:created', onAttachment);
+      s.off('attachment:removed', onAttachment);
     };
   }, [id]);
 }

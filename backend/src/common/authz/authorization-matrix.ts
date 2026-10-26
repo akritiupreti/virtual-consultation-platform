@@ -26,6 +26,7 @@ export enum Action {
   READ_MESSAGES = 'READ_MESSAGES',
   UPLOAD_ATTACHMENT = 'UPLOAD_ATTACHMENT',
   VIEW_ATTACHMENT = 'VIEW_ATTACHMENT',
+  DELETE_ATTACHMENT = 'DELETE_ATTACHMENT',
   DRAFT_SUMMARY = 'DRAFT_SUMMARY',
   FINALIZE_SUMMARY = 'FINALIZE_SUMMARY',
   REQUEST_SUMMARY_CHANGES = 'REQUEST_SUMMARY_CHANGES',
@@ -109,6 +110,11 @@ export const AUTHORIZATION_MATRIX: Record<Action, Permission> = {
     roles: [Role.PATIENT, Role.NURSE, Role.DOCTOR],
     ownership: Ownership.PARTICIPANT,
   },
+  // A patient may take back a file they shared by mistake (ADR-0028): their own
+  // consultation only, and the service further requires that they uploaded it and
+  // that the session is still IN_SESSION — once it ends, the files are part of the
+  // record. Clinicians and admins are denied.
+  [Action.DELETE_ATTACHMENT]: { roles: [Role.PATIENT], ownership: Ownership.OWNER },
   [Action.DRAFT_SUMMARY]: {
     roles: [Role.NURSE, Role.DOCTOR],
     ownership: Ownership.ASSIGNED_CLINICIAN,

@@ -13,6 +13,7 @@ const mock = vi.hoisted(() => ({
   getSummary: vi.fn(),
   getAttachments: vi.fn(),
   uploadAttachment: vi.fn(),
+  deleteAttachment: vi.fn(),
   sendMessage: vi.fn(),
   start: vi.fn(),
   complete: vi.fn(),
@@ -52,6 +53,7 @@ describe('ConsultationRoom screen', () => {
     mock.getSummary.mockReset().mockResolvedValue(fixtures.summary({ finalized: false }));
     mock.getAttachments.mockReset().mockResolvedValue([]);
     mock.uploadAttachment.mockReset();
+    mock.deleteAttachment.mockReset().mockResolvedValue(undefined);
     mock.sendMessage.mockReset().mockResolvedValue(fixtures.messages[1]);
     mock.start.mockReset().mockResolvedValue(fixtures.consultation());
     mock.complete.mockReset().mockResolvedValue(fixtures.consultation({ state: 'ENDED' }));
@@ -328,6 +330,51 @@ describe('ConsultationRoom screen', () => {
     const link = await findByRole('link', { name: 'rash-photo.png' });
     expect(link).toHaveAttribute('href', 'http://localhost:3000/attachments/a-1/download?token=t');
     expect(getByText(/2\.0 KB · Patient/)).toBeInTheDocument();
+  });
+
+  describe('removing a shared file (ADR-0028)', () => {
+    const patientFile = {
+      id: 'a-1',
+      filename: 'wrong-photo.png',
+      mimeType: 'image/png',
+      sizeBytes: 2048,
+      uploadedBy: 'u-patient',
+      createdAt: '2026-10-22T09:05:00.000Z',
+      downloadUrl: '/attachments/a-1/download?token=t',
+      expiresAt: '2099-01-01T00:00:00.000Z',
+    };
+
+    it('lets the patient remove their own file during the session, after confirming', async () => {
+      mock.getAttachments.mockResolvedValue([patientFile]);
+      const { user, findByRole, getByRole, queryByRole } = render(fixtures.users.patient);
+      await user.click(await findByRole('button', { name: /remove wrong-photo\.png/i }));
+      expect(mock.deleteAttachment).not.toHaveBeenCalled();
+      await user.click(getByRole('button', { name: /remove file/i }));
+      expect(mock.deleteAttachment).toHaveBeenCalledWith('c-1', 'a-1');
+      await waitFor(() =>
+        expect(queryByRole('link', { name: 'wrong-photo.png' })).not.toBeInTheDocument(),
+      );
+    });
+
+    it('offers no Remove once the session has ended', async () => {
+      mock.getConsultation.mockResolvedValue(fixtures.consultation({ state: 'ENDED' }));
+      mock.getAttachments.mockResolvedValue([patientFile]);
+      const { findByRole, queryByRole } = render(fixtures.users.patient);
+      await findByRole('link', { name: 'wrong-photo.png' });
+      expect(queryByRole('button', { name: /remove/i })).not.toBeInTheDocument();
+    });
+
+    it("never offers Remove to a clinician, or on the clinician's files", async () => {
+      mock.getAttachments.mockResolvedValue([{ ...patientFile, uploadedBy: 'u-doctor' }]);
+      const asDoctor = render(fixtures.users.doctor);
+      await asDoctor.findByRole('link', { name: 'wrong-photo.png' });
+      expect(asDoctor.queryByRole('button', { name: /remove/i })).not.toBeInTheDocument();
+      asDoctor.unmount();
+
+      const asPatient = render(fixtures.users.patient);
+      await asPatient.findByRole('link', { name: 'wrong-photo.png' });
+      expect(asPatient.queryByRole('button', { name: /remove/i })).not.toBeInTheDocument();
+    });
   });
 
   it('uploads a chosen file during the session', async () => {

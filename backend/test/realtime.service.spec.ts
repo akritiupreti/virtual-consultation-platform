@@ -86,6 +86,8 @@ describe('RealtimeService (unit)', () => {
     service.notifyAttachmentCreated('c-1');
     expect(server.to).toHaveBeenLastCalledWith('consultation:c-1');
     expect(room.emit).toHaveBeenLastCalledWith('attachment:created', { consultationId: 'c-1' });
+    service.notifyAttachmentRemoved('c-1');
+    expect(room.emit).toHaveBeenLastCalledWith('attachment:removed', { consultationId: 'c-1' });
   });
 
   it('reads a cached position, and degrades to null on a Redis error', async () => {

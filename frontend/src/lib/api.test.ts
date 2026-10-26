@@ -182,6 +182,13 @@ describe('api client', () => {
       '/consultations/c-1/summary/addendum',
     ],
     ['getAttachments', () => api.getAttachments('c-1'), 'GET', '/consultations/c-1/attachments'],
+    [
+      'deleteAttachment',
+      () => api.deleteAttachment('c-1', 'a-1'),
+      'DELETE',
+      '/consultations/c-1/attachments/a-1',
+    ],
+    ['getSignedOff', () => api.getSignedOff(), 'GET', '/consultations/signed-off'],
     ['getAudit', () => api.getAudit(), 'GET', '/audit'],
     ['getUsers', () => api.getUsers(), 'GET', '/users'],
     ['deactivateUser', () => api.deactivateUser('u-1'), 'POST', '/users/u-1/deactivate'],

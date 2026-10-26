@@ -76,6 +76,17 @@ export interface PendingSignoff {
   changesRequested: boolean;
 }
 
+/** A case the calling doctor signed off — their own review history (ADR-0029). */
+export interface SignedOff {
+  id: string;
+  priority: Priority;
+  symptomCategory: string | null;
+  complaintSummary: string;
+  endedAt: string | null;
+  finalizedAt: string | null;
+  draftedBy: string;
+}
+
 export interface ConsultationDetail {
   id: string;
   state: ConsultationState;
@@ -280,6 +291,7 @@ export const api = {
   getMine: (): Promise<MyConsultation[]> => apiFetch('/consultations/mine'),
   getAssigned: (): Promise<AssignedConsultation[]> => apiFetch('/consultations/assigned'),
   getPendingSignoff: (): Promise<PendingSignoff[]> => apiFetch('/consultations/pending-signoff'),
+  getSignedOff: (): Promise<SignedOff[]> => apiFetch('/consultations/signed-off'),
   getQueue: (): Promise<QueueItem[]> => apiFetch('/consultations/queue'),
   getConsultation: (id: string): Promise<ConsultationDetail> => apiFetch(`/consultations/${id}`),
   claim: (id: string): Promise<ConsultationDetail> =>
@@ -319,6 +331,9 @@ export const api = {
     form.append('file', file);
     return apiFetch(`/consultations/${id}/attachments`, { method: 'POST', body: form });
   },
+  // The patient takes back a file shared by mistake, while in session (ADR-0028).
+  deleteAttachment: (id: string, attachmentId: string): Promise<void> =>
+    apiFetch(`/consultations/${id}/attachments/${attachmentId}`, { method: 'DELETE' }),
 
   // The server paginates and filters the audit trail ({ items, total, limit, offset }).
   // Empty filters are dropped so they never reach the query string as blanks.

@@ -1,3 +1,4 @@
+import { within } from '@testing-library/react';
 import { axe } from 'jest-axe';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fixtures from '../test/fixtures';
@@ -26,11 +27,14 @@ describe('AdminUsers screen', () => {
   });
 
   it('lists accounts with role and status (no clinical content)', async () => {
-    const { findByText, getByText } = render();
+    const { findByText, getByText, getByRole } = render();
     expect(await findByText('nurse@example.test')).toBeInTheDocument();
     expect(getByText(/no clinical content/i)).toBeInTheDocument();
     // Counts: 3 total, 2 active, 1 deactivated.
-    expect(getByText('Total accounts')).toBeInTheDocument();
+    expect(document.querySelector('.header-stat')).toHaveTextContent(
+      '3 accounts · 2 active · 1 deactivated',
+    );
+    expect(within(getByRole('table')).getByText('Nurse')).toBeInTheDocument();
   });
 
   it('marks the signed-in admin as "You" (cannot self-deactivate)', async () => {
@@ -39,11 +43,15 @@ describe('AdminUsers screen', () => {
     expect(await findByText('You')).toBeInTheDocument();
   });
 
-  it('deactivates an active user and shows a notice', async () => {
+  it('deactivates an active user only after confirming, and shows a notice', async () => {
     mock.deactivateUser.mockResolvedValue({ ...fixtures.userAccounts[1], status: 'DEACTIVATED' });
     const { user, findByRole, findByText } = render();
-    const btn = await findByRole('button', { name: /deactivate/i });
-    await user.click(btn);
+    await user.click(await findByRole('button', { name: /^deactivate$/i }));
+    expect(mock.deactivateUser).not.toHaveBeenCalled();
+    // Clinicians' claimed cases return to the queue — the admin is told before confirming.
+    const dialog = await findByRole('alertdialog');
+    expect(dialog).toHaveTextContent(/return to the queue/i);
+    await user.click(within(dialog).getByRole('button', { name: /deactivate account/i }));
     expect(mock.deactivateUser).toHaveBeenCalledWith('u-nurse');
     expect(await findByText(/is now deactivated/i)).toBeInTheDocument();
   });
@@ -67,8 +75,21 @@ describe('AdminUsers screen', () => {
     const { ApiError } = await import('../lib/api');
     mock.deactivateUser.mockRejectedValueOnce(new ApiError(400, 'Cannot deactivate'));
     const { user, findByRole, findByText } = render();
-    await user.click(await findByRole('button', { name: /deactivate/i }));
+    await user.click(await findByRole('button', { name: /^deactivate$/i }));
+    await user.click(await findByRole('button', { name: /deactivate account/i }));
     expect(await findByText(/cannot deactivate/i)).toBeInTheDocument();
+  });
+
+  it('filters accounts by email search and role', async () => {
+    const { user, findByText, getByLabelText, queryByText } = render();
+    await findByText('nurse@example.test');
+    await user.type(getByLabelText(/search by email/i), 'doctor');
+    expect(queryByText('nurse@example.test')).not.toBeInTheDocument();
+    expect(queryByText('doctor@example.test')).toBeInTheDocument();
+    await user.clear(getByLabelText(/search by email/i));
+    await user.selectOptions(getByLabelText(/^role$/i), 'ADMIN');
+    expect(queryByText('doctor@example.test')).not.toBeInTheDocument();
+    expect(queryByText('admin@example.test')).toBeInTheDocument();
   });
 
   it('shows an empty state when there are no accounts', async () => {

@@ -7,8 +7,8 @@ import SummaryScreen from './Summary';
 
 const mock = vi.hoisted(() => ({
   getSummary: vi.fn(),
+  addAddendum: vi.fn(),
   finalizeSummary: vi.fn(),
-  requestSummaryChanges: vi.fn(),
 }));
 vi.mock('../lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../lib/api')>();
@@ -23,81 +23,84 @@ function render(user: AuthUser) {
   });
 }
 
+const addendum = {
+  id: 'ad-1',
+  authorId: 'u-doctor',
+  content: 'Synthetic addendum text.',
+  createdAt: '2026-10-22T10:00:00.000Z',
+};
+
 describe('Summary screen', () => {
   beforeEach(() => {
     mock.getSummary.mockReset();
+    mock.addAddendum.mockReset();
     mock.finalizeSummary.mockReset();
-    mock.requestSummaryChanges.mockReset();
   });
 
-  it('renders a finalized summary', async () => {
+  it('renders a finalized summary with its date', async () => {
     mock.getSummary.mockResolvedValue(fixtures.summary({ finalized: true }));
     const { findByText, getByText } = render(fixtures.users.patient);
     expect(await findByText(/synthetic summary content/i)).toBeInTheDocument();
-    expect(getByText(/finalized/i)).toBeInTheDocument();
+    expect(getByText(/^finalized/i)).toBeInTheDocument();
   });
 
-  it('shows the doctor a Finalize button for a draft and calls the API', async () => {
-    mock.getSummary.mockResolvedValue(fixtures.summary({ finalized: false }));
-    mock.finalizeSummary.mockResolvedValue(fixtures.summary({ finalized: true }));
-    const { user, findByRole } = render(fixtures.users.doctor);
-    await user.click(await findByRole('button', { name: /finalize \(doctor only\)/i }));
-    expect(mock.finalizeSummary).toHaveBeenCalledWith('c-1');
+  it('lists addenda under the signed summary, read-only for the patient', async () => {
+    mock.getSummary.mockResolvedValue(fixtures.summary({ finalized: true, addenda: [addendum] }));
+    const { findByText, queryByLabelText } = render(fixtures.users.patient);
+    expect(await findByText('Synthetic addendum text.')).toBeInTheDocument();
+    expect(queryByLabelText(/add an addendum/i)).not.toBeInTheDocument();
   });
 
-  it('does not show a Finalize button to a patient', async () => {
+  it('lets a clinician append an addendum to a finalized summary (FR-13)', async () => {
+    mock.getSummary.mockResolvedValue(fixtures.summary({ finalized: true, addenda: [] }));
+    mock.addAddendum.mockResolvedValue(fixtures.summary({ finalized: true, addenda: [addendum] }));
+    const { user, findByLabelText, getByRole, findByText } = render(fixtures.users.doctor);
+
+    const field = await findByLabelText(/add an addendum/i);
+    expect(getByRole('button', { name: /add addendum/i })).toBeDisabled();
+    await user.type(field, 'Synthetic addendum text.');
+    await user.click(getByRole('button', { name: /add addendum/i }));
+
+    expect(mock.addAddendum).toHaveBeenCalledWith('c-1', 'Synthetic addendum text.');
+    expect(await findByText(/addendum added to the record/i)).toBeInTheDocument();
+    expect(await findByText('Synthetic addendum text.')).toBeInTheDocument();
+  });
+
+  it('sends a doctor to the consultation room to sign off a draft (no blind sign-off here)', async () => {
     mock.getSummary.mockResolvedValue(fixtures.summary({ finalized: false }));
-    const { findByText, queryByRole } = render(fixtures.users.patient);
-    await findByText(/draft — not yet finalized/i);
+    const { findByText, findByRole, queryByRole } = render(fixtures.users.doctor);
+    expect(await findByText(/awaiting sign-off/i)).toBeInTheDocument();
+    expect(await findByRole('link', { name: /go to the consultation/i })).toHaveAttribute(
+      'href',
+      '/consultations/c-1',
+    );
     expect(queryByRole('button', { name: /finalize/i })).not.toBeInTheDocument();
   });
 
-  it('lets a doctor return a draft for changes with a note (ADR-0024)', async () => {
-    mock.getSummary.mockResolvedValue(fixtures.summary({ finalized: false }));
-    mock.requestSummaryChanges.mockResolvedValue(fixtures.summary({ finalized: false }));
-    const { user, findByRole, findByLabelText, findByText } = render(fixtures.users.doctor);
-
-    await user.type(await findByLabelText(/note for the drafter/i), 'Please add the BP reading.');
-    await user.click(await findByRole('button', { name: /request changes/i }));
-
-    expect(mock.requestSummaryChanges).toHaveBeenCalledWith('c-1', 'Please add the BP reading.');
-    expect(await findByText(/returned to the drafter to revise/i)).toBeInTheDocument();
-    // Requesting changes must not finalize.
-    expect(mock.finalizeSummary).not.toHaveBeenCalled();
-  });
-
-  it('requests changes with no note when the field is left blank', async () => {
-    mock.getSummary.mockResolvedValue(fixtures.summary({ finalized: false }));
-    mock.requestSummaryChanges.mockResolvedValue(fixtures.summary({ finalized: false }));
-    const { user, findByRole } = render(fixtures.users.doctor);
-    await user.click(await findByRole('button', { name: /request changes/i }));
-    expect(mock.requestSummaryChanges).toHaveBeenCalledWith('c-1', undefined);
-  });
-
-  it('does not show request-changes controls to a patient', async () => {
+  it('does not show sign-off or addendum controls to a patient on a draft', async () => {
     mock.getSummary.mockResolvedValue(fixtures.summary({ finalized: false }));
     const { findByText, queryByRole, queryByLabelText } = render(fixtures.users.patient);
     await findByText(/draft — not yet finalized/i);
-    expect(queryByRole('button', { name: /request changes/i })).not.toBeInTheDocument();
-    expect(queryByLabelText(/note for the drafter/i)).not.toBeInTheDocument();
+    expect(queryByRole('button', { name: /finalize|request changes/i })).not.toBeInTheDocument();
+    expect(queryByLabelText(/add an addendum/i)).not.toBeInTheDocument();
   });
 
-  it('the doctor draft view (with request-changes controls) is axe-clean', async () => {
-    mock.getSummary.mockResolvedValue(fixtures.summary({ finalized: false }));
-    const { container, findByLabelText } = render(fixtures.users.doctor);
-    await findByLabelText(/note for the drafter/i);
-    expect(await axe(container)).toHaveNoViolations();
-  });
-
-  it('surfaces an error when the summary is unavailable', async () => {
+  it('explains when the summary is not available yet', async () => {
     const { ApiError } = await import('../lib/api');
     mock.getSummary.mockRejectedValue(new ApiError(404, 'Summary not available'));
+    const { findByText } = render(fixtures.users.patient);
+    expect(await findByText(/not available yet/i)).toBeInTheDocument();
+  });
+
+  it('surfaces any other error', async () => {
+    const { ApiError } = await import('../lib/api');
+    mock.getSummary.mockRejectedValue(new ApiError(500, 'Server unavailable'));
     const { findByText } = render(fixtures.users.doctor);
-    expect(await findByText(/summary not available/i)).toBeInTheDocument();
+    expect(await findByText(/server unavailable/i)).toBeInTheDocument();
   });
 
   it('has no axe-detectable accessibility violations (WCAG 2.1 AA)', async () => {
-    mock.getSummary.mockResolvedValue(fixtures.summary({ finalized: true }));
+    mock.getSummary.mockResolvedValue(fixtures.summary({ finalized: true, addenda: [addendum] }));
     const { container, findByText } = render(fixtures.users.doctor);
     await findByText(/synthetic summary content/i);
     expect(await axe(container)).toHaveNoViolations();

@@ -1,3 +1,4 @@
+import { act } from '@testing-library/react';
 import { axe } from 'jest-axe';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fixtures from '../test/fixtures';
@@ -9,6 +10,13 @@ vi.mock('../lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../lib/api')>();
   return { ...actual, api: { ...actual.api, ...mock } };
 });
+// Capture the live signal handler (ADR-0027) so a test can play a server push.
+const live = vi.hoisted(() => ({ summary: null as null | (() => void) }));
+vi.mock('../lib/realtime', () => ({
+  useSummaryUpdates: (cb: () => void) => {
+    live.summary = cb;
+  },
+}));
 
 function render() {
   return renderWithProviders(<PendingSignoff />, {
@@ -28,6 +36,23 @@ describe('PendingSignoff (doctor)', () => {
     expect(links).toHaveLength(2);
     expect(links[0]).toHaveAttribute('href', '/consultations/c-1');
     expect(links[1]).toHaveAttribute('href', '/consultations/c-2');
+  });
+
+  it('marks a case already returned to the drafter, apart from ones ready to review', async () => {
+    mock.getPendingSignoff.mockResolvedValue(fixtures.pendingSignoff);
+    const { findByText, getByText } = render();
+    expect(await findByText('Returned to drafter')).toBeInTheDocument();
+    expect(getByText('Ready to review')).toBeInTheDocument();
+    expect(document.querySelector('.header-stat')).toHaveTextContent('1 ready to review');
+  });
+
+  it('refreshes live when a summary signal arrives (no polling wait)', async () => {
+    mock.getPendingSignoff.mockResolvedValue([]);
+    const { findByText, findAllByRole } = render();
+    await findByText(/no consultations are awaiting sign-off/i);
+    mock.getPendingSignoff.mockResolvedValue(fixtures.pendingSignoff);
+    await act(async () => live.summary?.());
+    expect(await findAllByRole('link', { name: /review & sign off/i })).toHaveLength(2);
   });
 
   it('shows an empty state when nothing is awaiting sign-off', async () => {

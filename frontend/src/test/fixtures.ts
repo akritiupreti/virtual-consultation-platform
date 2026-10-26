@@ -51,6 +51,7 @@ export const myConsultations: MyConsultation[] = [
     state: 'QUEUED',
     priority: 'ROUTINE',
     createdAt: '2026-10-22T09:00:00.000Z',
+    complaintSummary: 'Sample complaint (synthetic)',
     position: 2,
     summaryAvailable: false,
   },
@@ -59,13 +60,14 @@ export const myConsultations: MyConsultation[] = [
 export const assignedConsultations: AssignedConsultation[] = [
   {
     id: 'c-1',
-    state: 'ENDED',
+    state: 'SUMMARIZED',
     priority: 'URGENT',
     symptomCategory: 'Respiratory',
     complaintSummary: 'Sample complaint (synthetic)',
     claimedAt: '2026-10-22T09:02:00.000Z',
     startedAt: '2026-10-22T09:03:00.000Z',
     endedAt: '2026-10-22T09:20:00.000Z',
+    summaryDrafted: true,
     summaryFinalized: true,
     summaryChangesRequested: false,
   },
@@ -78,6 +80,7 @@ export const assignedConsultations: AssignedConsultation[] = [
     claimedAt: '2026-10-22T09:30:00.000Z',
     startedAt: null,
     endedAt: null,
+    summaryDrafted: false,
     summaryFinalized: false,
     summaryChangesRequested: false,
   },
@@ -92,6 +95,7 @@ export const pendingSignoff: PendingSignoff[] = [
     endedAt: '2026-10-22T09:20:00.000Z',
     draftedBy: 'u-nurse',
     draftedAt: '2026-10-22T09:22:00.000Z',
+    changesRequested: false,
   },
   {
     id: 'c-2',
@@ -101,6 +105,7 @@ export const pendingSignoff: PendingSignoff[] = [
     endedAt: '2026-10-22T09:40:00.000Z',
     draftedBy: 'u-nurse',
     draftedAt: '2026-10-22T09:41:00.000Z',
+    changesRequested: true,
   },
 ];
 

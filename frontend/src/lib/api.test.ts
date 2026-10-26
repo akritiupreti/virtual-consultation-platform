@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ApiError, api, getToken, setToken } from './api';
+import { ApiError, api, attachmentHref, getToken, setToken, setUnauthorizedHandler } from './api';
 
 function jsonResponse(body: unknown, init: Partial<Response> = {}): Response {
   return {
@@ -81,21 +81,63 @@ describe('api client', () => {
     await expect(api.cancel('c-1')).resolves.toBeUndefined();
   });
 
-  it('getAudit unwraps the paginated items array', async () => {
-    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
-      jsonResponse({ items: [{ id: 'a-1' }], total: 1, limit: 50, offset: 0 }),
+  it('getAudit passes filters as a query string and drops empty ones', async () => {
+    const page = { items: [{ id: 'a-1' }], total: 1, limit: 50, offset: 0 };
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue(jsonResponse(page));
+    await expect(
+      api.getAudit({ eventType: 'LOGIN_SUCCESS', actorId: '', limit: 50, offset: 0 }),
+    ).resolves.toEqual(page);
+    const [url] = (fetch as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(url).toBe('http://localhost:3000/audit?eventType=LOGIN_SUCCESS&limit=50&offset=0');
+  });
+
+  it('getAudit with no filters hits the bare endpoint', async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue(jsonResponse({ items: [], total: 0 }));
+    await api.getAudit();
+    expect((fetch as ReturnType<typeof vi.fn>).mock.calls[0][0]).toBe(
+      'http://localhost:3000/audit',
     );
-    await expect(api.getAudit()).resolves.toEqual([{ id: 'a-1' }]);
   });
 
-  it('getAudit tolerates a bare array response', async () => {
-    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue(jsonResponse([{ id: 'a-1' }]));
-    await expect(api.getAudit()).resolves.toEqual([{ id: 'a-1' }]);
+  it('signs the user out when an authenticated request returns 401 (expired session)', async () => {
+    const onUnauthorized = vi.fn();
+    setUnauthorizedHandler(onUnauthorized);
+    setToken('expired');
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
+      jsonResponse({ message: 'Unauthorized' }, { status: 401 }),
+    );
+    await expect(api.getQueue()).rejects.toMatchObject({ status: 401 });
+    expect(onUnauthorized).toHaveBeenCalledTimes(1);
+    setUnauthorizedHandler(null);
   });
 
-  it('getAudit returns [] when the page has no items', async () => {
-    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue(jsonResponse({ total: 0 }));
-    await expect(api.getAudit()).resolves.toEqual([]);
+  it('does not treat a failed login (no token) as an expired session', async () => {
+    const onUnauthorized = vi.fn();
+    setUnauthorizedHandler(onUnauthorized);
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
+      jsonResponse({ message: 'Invalid credentials' }, { status: 401 }),
+    );
+    await expect(api.login('a@b.test', 'bad')).rejects.toMatchObject({ status: 401 });
+    expect(onUnauthorized).not.toHaveBeenCalled();
+    setUnauthorizedHandler(null);
+  });
+
+  it('uploads an attachment as multipart without forcing a JSON content type', async () => {
+    setToken('tok');
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue(jsonResponse({ id: 'a-1' }));
+    const file = new File(['x'], 'scan.pdf', { type: 'application/pdf' });
+    await api.uploadAttachment('c-1', file);
+    const [url, init] = (fetch as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(url).toBe('http://localhost:3000/consultations/c-1/attachments');
+    expect(init.body).toBeInstanceOf(FormData);
+    expect(init.headers['Content-Type']).toBeUndefined();
+    expect(init.headers.Authorization).toBe('Bearer tok');
+  });
+
+  it('builds an absolute attachment download URL from the signed path', () => {
+    expect(attachmentHref({ downloadUrl: '/attachments/a-1/download?token=t' })).toBe(
+      'http://localhost:3000/attachments/a-1/download?token=t',
+    );
   });
 
   it('exposes ApiError as an Error subclass', () => {
@@ -133,6 +175,13 @@ describe('api client', () => {
       '/consultations/c-1/summary/request-changes',
     ],
     ['getSummary', () => api.getSummary('c-1'), 'GET', '/consultations/c-1/summary'],
+    [
+      'addAddendum',
+      () => api.addAddendum('c-1', 'x'),
+      'POST',
+      '/consultations/c-1/summary/addendum',
+    ],
+    ['getAttachments', () => api.getAttachments('c-1'), 'GET', '/consultations/c-1/attachments'],
     ['getAudit', () => api.getAudit(), 'GET', '/audit'],
     ['getUsers', () => api.getUsers(), 'GET', '/users'],
     ['deactivateUser', () => api.deactivateUser('u-1'), 'POST', '/users/u-1/deactivate'],

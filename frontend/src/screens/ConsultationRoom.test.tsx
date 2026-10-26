@@ -1,7 +1,8 @@
-import { waitFor } from '@testing-library/react';
+import { act, waitFor, within } from '@testing-library/react';
 import { axe } from 'jest-axe';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AuthUser } from '../lib/api';
+import type { SummaryUpdated } from '../lib/realtime';
 import * as fixtures from '../test/fixtures';
 import { renderWithProviders } from '../test/render';
 import ConsultationRoom from './ConsultationRoom';
@@ -10,6 +11,8 @@ const mock = vi.hoisted(() => ({
   getConsultation: vi.fn(),
   getMessages: vi.fn(),
   getSummary: vi.fn(),
+  getAttachments: vi.fn(),
+  uploadAttachment: vi.fn(),
   sendMessage: vi.fn(),
   start: vi.fn(),
   complete: vi.fn(),
@@ -21,8 +24,14 @@ vi.mock('../lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../lib/api')>();
   return { ...actual, api: { ...actual.api, ...mock } };
 });
+
+// Capture the live summary handler so a test can play a server signal (ADR-0027).
+const live = vi.hoisted(() => ({ summary: null as null | ((p: SummaryUpdated) => void) }));
 vi.mock('../lib/realtime', () => ({
   useConsultationRoom: () => undefined,
+  useSummaryUpdates: (cb: (p: SummaryUpdated) => void) => {
+    live.summary = cb;
+  },
 }));
 
 function render(user: AuthUser) {
@@ -33,24 +42,32 @@ function render(user: AuthUser) {
   });
 }
 
+const nurseRunEnded = () => fixtures.consultation({ state: 'ENDED', claimedBy: 'u-nurse' });
+
 describe('ConsultationRoom screen', () => {
   beforeEach(() => {
+    live.summary = null;
     mock.getConsultation.mockReset().mockResolvedValue(fixtures.consultation());
     mock.getMessages.mockReset().mockResolvedValue(fixtures.messages);
     mock.getSummary.mockReset().mockResolvedValue(fixtures.summary({ finalized: false }));
+    mock.getAttachments.mockReset().mockResolvedValue([]);
+    mock.uploadAttachment.mockReset();
     mock.sendMessage.mockReset().mockResolvedValue(fixtures.messages[1]);
-    mock.start.mockReset();
-    mock.complete.mockReset();
+    mock.start.mockReset().mockResolvedValue(fixtures.consultation());
+    mock.complete.mockReset().mockResolvedValue(fixtures.consultation({ state: 'ENDED' }));
     mock.finalizeSummary.mockReset();
     mock.draftSummary.mockReset();
     mock.requestSummaryChanges.mockReset();
   });
 
-  it('renders intake, state and messages', async () => {
-    const { findByText, getByText } = render(fixtures.users.doctor);
+  it('renders intake, state and messages with sender labels', async () => {
+    const { findByText, getByText, getAllByText } = render(fixtures.users.doctor);
     expect(await findByText(/synthetic chief complaint/i)).toBeInTheDocument();
-    expect(getByText(/sample patient message/i)).toBeInTheDocument();
-    expect(getByText('IN_SESSION')).toBeInTheDocument();
+    expect(await findByText(/sample patient message/i)).toBeInTheDocument();
+    // Human-readable state, not the enum.
+    expect(getAllByText('In session').length).toBeGreaterThan(0);
+    expect(getByText('Patient')).toBeInTheDocument();
+    expect(getByText('You')).toBeInTheDocument();
   });
 
   it('lets a clinician send a message during the session', async () => {
@@ -61,22 +78,61 @@ describe('ConsultationRoom screen', () => {
     expect(mock.sendMessage).toHaveBeenCalledWith('c-1', 'Hello there');
   });
 
-  it('offers Start session when the case is CLAIMED', async () => {
+  it('offers Start session to the assigned clinician when the case is CLAIMED', async () => {
     mock.getConsultation.mockResolvedValue(fixtures.consultation({ state: 'CLAIMED' }));
     const { user, findByRole } = render(fixtures.users.doctor);
     await user.click(await findByRole('button', { name: /start session/i }));
     expect(mock.start).toHaveBeenCalledWith('c-1');
   });
 
-  it('autosaves the summary draft as the clinician types (no Save button)', async () => {
-    const { user, findByLabelText, queryByRole, findByText } = render(fixtures.users.doctor);
+  it('saves the summary draft only when the clinician clicks Save (ADR-0026)', async () => {
+    const { user, findByLabelText, getByRole, findByText } = render(fixtures.users.doctor);
     const draft = await findByLabelText(/summary draft/i);
-    await user.type(draft, ' plus an edit');
-    // The manual "Save draft" button is gone — persistence is automatic.
-    expect(queryByRole('button', { name: /save draft/i })).not.toBeInTheDocument();
-    // The edit is persisted automatically (debounced) and the status reflects it.
-    await waitFor(() => expect(mock.draftSummary).toHaveBeenCalled(), { timeout: 2000 });
-    expect(await findByText(/saved/i)).toBeInTheDocument();
+    await waitFor(() => expect(draft).toHaveValue('Synthetic summary content for testing only.'));
+    mock.draftSummary.mockResolvedValue(
+      fixtures.summary({
+        finalized: false,
+        content: 'Synthetic summary content for testing only. More',
+      }),
+    );
+
+    await user.type(draft, ' More');
+    // Typing alone never persists — the edit is marked unsaved.
+    expect(await findByText(/unsaved changes/i)).toBeInTheDocument();
+    await new Promise((r) => setTimeout(r, 900));
+    expect(mock.draftSummary).not.toHaveBeenCalled();
+
+    await user.click(getByRole('button', { name: /save draft/i }));
+    expect(mock.draftSummary).toHaveBeenCalledWith(
+      'c-1',
+      'Synthetic summary content for testing only. More',
+    );
+    expect(await findByText(/saved at/i)).toBeInTheDocument();
+  });
+
+  it('keeps Save disabled until there is an unsaved change', async () => {
+    const { findByRole } = render(fixtures.users.doctor);
+    expect(await findByRole('button', { name: /save draft/i })).toBeDisabled();
+  });
+
+  it('asks before ending the session and saves an unsaved draft first', async () => {
+    mock.getSummary.mockRejectedValue(new Error('no draft'));
+    mock.draftSummary.mockResolvedValue(fixtures.summary({ finalized: false, content: 'Notes' }));
+    const { user, findByLabelText, getByRole, findByRole } = render(fixtures.users.doctor);
+    await user.type(await findByLabelText(/summary draft/i), 'Notes');
+
+    await user.click(getByRole('button', { name: /end consultation/i }));
+    // Nothing happens until it is confirmed.
+    expect(mock.complete).not.toHaveBeenCalled();
+    const dialog = await findByRole('alertdialog', { name: /confirm end consultation/i });
+    expect(dialog).toHaveTextContent(/unsaved summary draft will be saved first/i);
+
+    await user.click(within(dialog).getByRole('button', { name: /^end consultation$/i }));
+    await waitFor(() => expect(mock.complete).toHaveBeenCalledWith('c-1'));
+    expect(mock.draftSummary).toHaveBeenCalledWith('c-1', 'Notes');
+    expect(mock.draftSummary.mock.invocationCallOrder[0]).toBeLessThan(
+      mock.complete.mock.invocationCallOrder[0],
+    );
   });
 
   it('offers Finalize & sign off only to a doctor on an ENDED case', async () => {
@@ -86,45 +142,71 @@ describe('ConsultationRoom screen', () => {
   });
 
   it('does not offer Finalize & sign off to the assigned nurse on an ENDED case', async () => {
-    // The nurse who ran the case (assigned clinician) can still draft, but sign-off is doctor-only.
-    mock.getConsultation.mockResolvedValue(
-      fixtures.consultation({ state: 'ENDED', claimedBy: 'u-nurse' }),
-    );
+    mock.getConsultation.mockResolvedValue(nurseRunEnded());
     const { findByText, queryByRole } = render(fixtures.users.nurse);
-    await findByText(/a doctor must sign off/i);
+    await findByText(/a doctor finalizes the summary/i);
     expect(queryByRole('button', { name: /finalize & sign off/i })).not.toBeInTheDocument();
   });
 
+  it('tells the nurse a saved draft is required when an ended case has none', async () => {
+    mock.getConsultation.mockResolvedValue(nurseRunEnded());
+    mock.getSummary.mockRejectedValue(new Error('404'));
+    const { findByText } = render(fixtures.users.nurse);
+    expect(
+      await findByText(/a doctor can only sign off once a draft is saved/i),
+    ).toBeInTheDocument();
+  });
+
   it('lets a non-assigned doctor review read-only and sign off a nurse-run case without re-drafting', async () => {
-    // A nurse ran this case (claimedBy = u-nurse); the signing doctor never claimed it.
-    mock.getConsultation.mockResolvedValue(
-      fixtures.consultation({ state: 'ENDED', claimedBy: 'u-nurse' }),
-    );
+    mock.getConsultation.mockResolvedValue(nurseRunEnded());
     mock.getSummary.mockResolvedValue(
       fixtures.summary({ finalized: false, content: 'Nurse-authored draft' }),
     );
     mock.finalizeSummary.mockResolvedValue(fixtures.summary({ finalized: true }));
-    const { user, findByLabelText, findByRole, getByRole } = render(fixtures.users.doctor);
+    const { user, findByText, findByRole, getByRole, queryByRole } = render(fixtures.users.doctor);
 
     // The draft is shown read-only — there is no editable "Summary draft" field.
-    const review = await findByLabelText(/awaiting your sign-off/i);
-    expect(review).toHaveAttribute('readonly');
-    await waitFor(() => expect(review).toHaveValue('Nurse-authored draft'));
+    expect(await findByText('Nurse-authored draft')).toBeInTheDocument();
+    expect(queryByRole('textbox', { name: /^summary draft$/i })).not.toBeInTheDocument();
+    // A reviewer is not a participant: the conversation is not loaded.
+    expect(mock.getMessages).not.toHaveBeenCalled();
 
     const signOff = await findByRole('button', { name: /finalize & sign off/i });
     await waitFor(() => expect(signOff).toBeEnabled());
     await user.click(signOff);
     await user.click(getByRole('button', { name: /confirm & finalize/i }));
 
-    // Finalizes the existing draft as-is — never re-drafts (that would 403 for a non-assigned doctor).
+    // Finalizes the existing draft as-is — never re-drafts (that would 403).
     expect(mock.draftSummary).not.toHaveBeenCalled();
     expect(mock.finalizeSummary).toHaveBeenCalledWith('c-1');
   });
 
-  it('shows the drafting nurse a durable revision-request banner with the note (ADR-0025)', async () => {
-    mock.getConsultation.mockResolvedValue(
-      fixtures.consultation({ state: 'ENDED', claimedBy: 'u-nurse' }),
+  it('shows the reviewing doctor a revision the drafter saves, live (ADR-0027)', async () => {
+    mock.getConsultation.mockResolvedValue(nurseRunEnded());
+    mock.getSummary.mockResolvedValue(
+      fixtures.summary({ finalized: false, content: 'First draft' }),
     );
+    const { findByText } = render(fixtures.users.doctor);
+    await findByText('First draft');
+
+    mock.getSummary.mockResolvedValue(
+      fixtures.summary({ finalized: false, content: 'Revised draft with BP' }),
+    );
+    await act(async () => live.summary?.({ consultationId: 'c-1', reason: 'drafted' }));
+
+    expect(await findByText('Revised draft with BP')).toBeInTheDocument();
+    expect(await findByText(/the drafter saved a revision/i)).toBeInTheDocument();
+  });
+
+  it('shows the drafting nurse a change request the moment it is made (ADR-0025/0027)', async () => {
+    mock.getConsultation.mockResolvedValue(nurseRunEnded());
+    mock.getSummary.mockResolvedValue(
+      fixtures.summary({ finalized: false, content: 'Likely viral URTI.', draftedBy: 'u-nurse' }),
+    );
+    const { findByText, queryByText, findByRole } = render(fixtures.users.nurse);
+    await findByRole('button', { name: /save draft/i });
+    expect(queryByText(/asked you to revise/i)).not.toBeInTheDocument();
+
     mock.getSummary.mockResolvedValue(
       fixtures.summary({
         finalized: false,
@@ -134,17 +216,45 @@ describe('ConsultationRoom screen', () => {
         changesRequestedNote: 'Please add the BP reading.',
       }),
     );
-    const { findByText } = render(fixtures.users.nurse);
+    await act(async () => live.summary?.({ consultationId: 'c-1', reason: 'changes_requested' }));
+
     expect(await findByText(/a doctor asked you to revise this summary/i)).toBeInTheDocument();
     expect(await findByText(/please add the bp reading/i)).toBeInTheDocument();
+    expect(await findByRole('button', { name: /save revision/i })).toBeInTheDocument();
+  });
+
+  it('never overwrites text the drafter is still editing when a signal arrives', async () => {
+    mock.getConsultation.mockResolvedValue(nurseRunEnded());
+    mock.getSummary.mockResolvedValue(fixtures.summary({ finalized: false, content: 'Saved' }));
+    const { user, findByLabelText } = render(fixtures.users.nurse);
+    const draft = await findByLabelText(/summary draft/i);
+    await waitFor(() => expect(draft).toHaveValue('Saved'));
+    await user.type(draft, ' and typing');
+
+    await act(async () => live.summary?.({ consultationId: 'c-1', reason: 'changes_requested' }));
+    expect(draft).toHaveValue('Saved and typing');
+  });
+
+  it('ignores summary signals for other consultations', async () => {
+    const { findByText } = render(fixtures.users.doctor);
+    await findByText(/synthetic chief complaint/i);
+    const calls = mock.getSummary.mock.calls.length;
+    await act(async () => live.summary?.({ consultationId: 'other', reason: 'drafted' }));
+    expect(mock.getSummary.mock.calls.length).toBe(calls);
   });
 
   it('lets a reviewing doctor return a nurse-run draft for changes with a note (ADR-0024)', async () => {
-    mock.getConsultation.mockResolvedValue(
-      fixtures.consultation({ state: 'ENDED', claimedBy: 'u-nurse' }),
+    mock.getConsultation.mockResolvedValue(nurseRunEnded());
+    mock.getSummary.mockResolvedValueOnce(
+      fixtures.summary({ finalized: false, content: 'Nurse-authored draft' }),
     );
     mock.getSummary.mockResolvedValue(
-      fixtures.summary({ finalized: false, content: 'Nurse-authored draft' }),
+      fixtures.summary({
+        finalized: false,
+        content: 'Nurse-authored draft',
+        changesRequestedAt: '2026-10-22T09:25:00.000Z',
+        changesRequestedNote: 'Please add the BP reading.',
+      }),
     );
     mock.requestSummaryChanges.mockResolvedValue(fixtures.summary({ finalized: false }));
     const { user, findByLabelText, getByRole, findByText } = render(fixtures.users.doctor);
@@ -153,58 +263,100 @@ describe('ConsultationRoom screen', () => {
     await user.click(getByRole('button', { name: /request changes/i }));
 
     expect(mock.requestSummaryChanges).toHaveBeenCalledWith('c-1', 'Please add the BP reading.');
-    expect(await findByText(/drafter has been asked to revise/i)).toBeInTheDocument();
+    expect(await findByText(/returned to the drafter for changes/i)).toBeInTheDocument();
     // Requesting changes must not finalize the summary.
     expect(mock.finalizeSummary).not.toHaveBeenCalled();
   });
 
-  it('finalizing saves the current draft then locks it, after confirmation', async () => {
+  it('finalizing saves the assigned doctor’s unsaved draft first, after confirmation', async () => {
     mock.getConsultation.mockResolvedValue(fixtures.consultation({ state: 'ENDED' }));
-    mock.getSummary.mockResolvedValue(fixtures.summary({ finalized: false, content: '' }));
-    mock.draftSummary.mockResolvedValue(fixtures.summary({ finalized: false }));
+    mock.getSummary.mockRejectedValue(new Error('no draft'));
+    mock.draftSummary.mockResolvedValue(
+      fixtures.summary({ finalized: false, content: 'Draft text' }),
+    );
     mock.finalizeSummary.mockResolvedValue(fixtures.summary({ finalized: true }));
     const { user, findByLabelText, findByRole, getByRole } = render(fixtures.users.doctor);
 
-    // Edit the draft, then sign off in one action (no separate "Save draft" click).
     await user.type(await findByLabelText(/summary draft/i), 'Draft text');
 
     // First click only asks for confirmation — nothing is persisted yet.
     await user.click(await findByRole('button', { name: /finalize & sign off/i }));
     expect(mock.finalizeSummary).not.toHaveBeenCalled();
+    expect(mock.draftSummary).not.toHaveBeenCalled();
 
     // Confirming saves the editor content, then finalizes.
     await user.click(getByRole('button', { name: /confirm & finalize/i }));
+    await waitFor(() => expect(mock.finalizeSummary).toHaveBeenCalledWith('c-1'));
     expect(mock.draftSummary).toHaveBeenCalledWith('c-1', 'Draft text');
-    expect(mock.finalizeSummary).toHaveBeenCalledWith('c-1');
   });
 
   it('cancels finalize without persisting anything', async () => {
     mock.getConsultation.mockResolvedValue(fixtures.consultation({ state: 'ENDED' }));
-    mock.getSummary.mockResolvedValue(fixtures.summary({ finalized: false, content: '' }));
+    mock.getSummary.mockRejectedValue(new Error('no draft'));
     const { user, findByLabelText, getByRole, queryByRole } = render(fixtures.users.doctor);
     await user.type(await findByLabelText(/summary draft/i), 'Draft text');
     await user.click(getByRole('button', { name: /finalize & sign off/i }));
-    await user.click(getByRole('button', { name: /cancel/i }));
+    await user.click(getByRole('button', { name: /^cancel$/i }));
     expect(mock.finalizeSummary).not.toHaveBeenCalled();
+    expect(mock.draftSummary).not.toHaveBeenCalled();
     expect(queryByRole('button', { name: /confirm & finalize/i })).not.toBeInTheDocument();
   });
 
-  it('does not show clinician controls to a patient', async () => {
-    const { findByText, queryByRole } = render(fixtures.users.patient);
-    await findByText(/synthetic chief complaint/i);
-    expect(queryByRole('heading', { name: /clinician controls/i })).not.toBeInTheDocument();
+  it('shows a patient guidance, files and messages but no clinician controls', async () => {
+    mock.getConsultation.mockResolvedValue(fixtures.consultation({ state: 'CLAIMED' }));
+    const { findByText, queryByRole, queryByLabelText } = render(fixtures.users.patient);
+    expect(await findByText(/will start the session shortly/i)).toBeInTheDocument();
+    expect(queryByRole('button', { name: /start session/i })).not.toBeInTheDocument();
+    expect(queryByLabelText(/summary draft/i)).not.toBeInTheDocument();
+    expect(mock.getSummary).not.toHaveBeenCalled();
+  });
+
+  it('lists shared files with a signed download link', async () => {
+    mock.getAttachments.mockResolvedValue([
+      {
+        id: 'a-1',
+        filename: 'rash-photo.png',
+        mimeType: 'image/png',
+        sizeBytes: 2048,
+        uploadedBy: 'u-patient',
+        createdAt: '2026-10-22T09:05:00.000Z',
+        downloadUrl: '/attachments/a-1/download?token=t',
+        expiresAt: '2099-01-01T00:00:00.000Z',
+      },
+    ]);
+    const { findByRole, getByText } = render(fixtures.users.doctor);
+    const link = await findByRole('link', { name: 'rash-photo.png' });
+    expect(link).toHaveAttribute('href', 'http://localhost:3000/attachments/a-1/download?token=t');
+    expect(getByText(/2\.0 KB · Patient/)).toBeInTheDocument();
+  });
+
+  it('uploads a chosen file during the session', async () => {
+    mock.uploadAttachment.mockResolvedValue({});
+    const { user, findByRole, container } = render(fixtures.users.doctor);
+    await findByRole('button', { name: /attach a file/i });
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+    const file = new File(['x'], 'scan.pdf', { type: 'application/pdf' });
+    await user.upload(input, file);
+    await waitFor(() => expect(mock.uploadAttachment).toHaveBeenCalledWith('c-1', file));
   });
 
   it('surfaces a load error when the consultation cannot be fetched', async () => {
     const { ApiError } = await import('../lib/api');
-    mock.getConsultation.mockReset().mockRejectedValue(new ApiError(403, 'Forbidden room'));
+    mock.getConsultation.mockReset().mockRejectedValue(new ApiError(500, 'Room unavailable'));
     const { findByText } = render(fixtures.users.doctor);
-    expect(await findByText(/forbidden room/i)).toBeInTheDocument();
+    expect(await findByText(/room unavailable/i)).toBeInTheDocument();
+  });
+
+  it('explains when access ends mid-review (e.g. another doctor signed it off)', async () => {
+    const { ApiError } = await import('../lib/api');
+    mock.getConsultation.mockReset().mockRejectedValue(new ApiError(403, 'Forbidden'));
+    const { findByText } = render(fixtures.users.doctor);
+    expect(await findByText(/no longer available to you/i)).toBeInTheDocument();
   });
 
   it('has no axe-detectable accessibility violations (WCAG 2.1 AA)', async () => {
     const { container, findByText } = render(fixtures.users.doctor);
-    await findByText(/synthetic chief complaint/i);
+    await findByText(/sample patient message/i);
     expect(await axe(container)).toHaveNoViolations();
   });
 });

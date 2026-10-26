@@ -59,6 +59,19 @@ const BADGES = [
   { name: 'nurse/doctor', fg: '#2b7a3d', bg: '#e6f4ea' },
   { name: 'admin', fg: '#7a3db8', bg: '#f3e8fd' },
   { name: 'attention', fg: '#8a5000', bg: '#fff3e0' },
+  // Status / priority pills and banners (styles.css, ADR-0017).
+  { name: 'pill neutral', fg: '#3d4a57', bg: '#eceff2' },
+  { name: 'pill info', fg: '#0b57d0', bg: '#e3effd' },
+  { name: 'pill success', fg: '#2b7a3d', bg: '#e6f4ea' },
+  { name: 'pill muted', fg: '#566573', bg: '#f1f3f5' },
+  { name: 'pill danger', fg: '#a8261d', bg: '#fdeceb' },
+  { name: 'priority routine', fg: '#2b6b36', bg: '#e7f3ea' },
+  { name: 'priority urgent', fg: '#7a5200', bg: '#fff4dc' },
+  { name: 'priority emergency', fg: '#a8261d', bg: '#fdeceb' },
+  { name: 'segmented selected', fg: '#1557c0', bg: '#eaf2fe' },
+  { name: 'info banner', fg: '#0b4aa8', bg: '#eef5fe' },
+  { name: 'danger banner', fg: '#a8261d', bg: '#fdf3f2' },
+  { name: 'nav link on brand bar', fg: '#ffffff', bg: '#1557c0' },
 ];
 
 describe('WCAG 2.1 AA colour contrast (design tokens)', () => {
@@ -81,7 +94,7 @@ describe('WCAG 2.1 AA colour contrast (design tokens)', () => {
     expect(ratio(fg(), bgc())).toBeGreaterThanOrEqual(min);
   });
 
-  it.each(BADGES)('role badge "$name" meets AA', ({ fg, bg: b }) => {
+  it.each(BADGES)('badge / pill "$name" meets AA', ({ fg, bg: b }) => {
     expect(ratio(fg, b)).toBeGreaterThanOrEqual(4.5);
   });
 });

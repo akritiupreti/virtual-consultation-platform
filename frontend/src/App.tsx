@@ -1,8 +1,10 @@
 import { JSX } from 'react';
 import { Link, NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import BrandMark from './components/BrandMark';
 import { Role } from './lib/api';
 import { homePathFor, useAuth } from './lib/auth';
 import { useClinicianNotifications } from './lib/clinicianNotifications';
+import { roleLabel } from './lib/format';
 import AdminAudit from './screens/AdminAudit';
 import AdminUsers from './screens/AdminUsers';
 import ConsultationRoom from './screens/ConsultationRoom';
@@ -73,19 +75,23 @@ function NavBar(): JSX.Element | null {
   }
   return (
     <header className="nav">
-      <Link to={homePathFor(user.role)} className="brand" aria-label="Go to home">
-        <span className="brand-mark" aria-hidden="true">
-          ⊕
-        </span>
-        Virtual Consultation Platform
-      </Link>
-      <span className={`badge badge-${user.role.toLowerCase()}`}>{user.role}</span>
-      <NavLinks role={user.role} />
-      <span className="spacer" />
-      <span className="muted nav-email">{user.email}</span>
-      <button className="secondary" onClick={logout}>
-        Log out
-      </button>
+      <div className="nav-inner">
+        <Link to={homePathFor(user.role)} className="brand">
+          <BrandMark />
+          <span className="brand-name">Virtual Consultation</span>
+        </Link>
+        <NavLinks role={user.role} />
+        <span className="spacer" />
+        <div className="nav-user">
+          <span className="nav-email" title={user.email}>
+            {user.email}
+          </span>
+          <span className={`badge badge-${user.role.toLowerCase()}`}>{roleLabel(user.role)}</span>
+          <button className="nav-logout" onClick={logout}>
+            Log out
+          </button>
+        </div>
+      </div>
     </header>
   );
 }
@@ -107,9 +113,12 @@ export default function App(): JSX.Element {
 
   return (
     <div className="app">
+      <a className="skip-link" href="#main">
+        Skip to main content
+      </a>
       {isClinician && <ClinicianNotifications />}
       <NavBar />
-      <main className="container">
+      <main className="container" id="main" tabIndex={-1}>
         <Routes>
           <Route
             path="/login"

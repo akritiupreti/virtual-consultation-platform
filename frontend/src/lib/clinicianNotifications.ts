@@ -7,7 +7,8 @@
  * Unlike the patient toasts (which are deliberately state-only), this one carries
  * the doctor's optional note: it is feedback addressed to this one clinician and
  * is delivered only to their own channel — the same way a message body reaches a
- * participant. It is never persisted (invariant 6); the toast is its only surface.
+ * participant. It is never logged (invariant 6); the durable copy is the marker on
+ * the summary itself, shown as a banner in the room (ADR-0025).
  */
 import { useCallback } from 'react';
 import { useNotify } from './notifications';

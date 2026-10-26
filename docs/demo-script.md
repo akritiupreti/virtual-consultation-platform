@@ -62,43 +62,55 @@ sequenceDiagram
     N->>N: /queue — claim the case (DB-atomic)
     N->>N: start → /consultations/:id
     Pt->>N: chat (persisted + live both ways)
-    N->>N: complete → draft summary
+    N->>N: draft summary → Save draft → End consultation
+    Note over D: case appears live on Pending sign-off
     opt Doctor disagrees with the draft
-        D->>N: request changes (optional note) — stays Ended, nurse notified
-        N->>N: revise the draft
+        D->>N: request changes (optional note) — stays Ended, nurse's room updates live
+        N->>N: revise → Save revision (doctor's open copy updates live)
     end
-    D->>D: /consultations/:id/summary — finalize (doctor-only, immutable)
-    Pt->>Pt: reads the finalized summary
+    D->>D: review in the room → Finalize & sign off (doctor-only, immutable)
+    Pt->>Pt: reads the finalized summary (+ any addenda)
 ```
 
 1. **Patient** — sign in as `patient@vcp.local` → land on `/patient`. Submit a request
-   (chief complaint, symptom category, onset, severity, **consent checkbox**). **Look
-   for:** it immediately shows **Queued** with a live **"N ahead"** position.
+   (main problem, symptom category, onset, severity, optional history/medications,
+   **consent checkbox**). **Look for:** the "not for emergencies" notice, and the request
+   immediately listed under **Current** with a status stepper and a live **"N people
+   ahead of you"** position. Cancelling asks for confirmation first.
 2. **Nurse** — sign in as `nurse@vcp.local` → `/queue`. **Look for:** the queue shows
    only the **pre-claim minimum** (priority, symptom category, severity, a short
    complaint, wait time) — **no patient identity, no attachments** (data
    minimization, C7). Click **Claim**. **Look for:** the case leaves other clinicians'
    queues instantly.
-3. **Nurse** — **Start** the consultation → `/consultations/:id` (state → In Session).
-   Send a message. In the patient window, **look for** the message arriving **live**
-   (and vice-versa); the patient's position/status updates without a refresh.
-4. **Nurse** — **Complete** the consultation (→ Ended), then **draft** a summary.
-   **Look for:** the nurse can draft but the **Finalize** action is not available to
-   them. The case now appears on the doctor's **Pending sign-off** worklist (ADR-0020).
-5. **Doctor — request changes (optional).** Sign in as `doctor@vcp.local`, open the case
-   (from **Pending sign-off** or `/consultations/:id`), review the draft and click
-   **Request changes** with a short note. **Look for:** the case stays **Ended** (not
-   finalized); in the nurse's window a **toast** announces it live, and — even if the
-   nurse missed the toast — a **"Changes requested" badge** appears on their **My
-   consultations** list and a **banner with the note** shows above the draft editor in the
-   room (ADR-0024/0025). The nurse edits the draft; autosaving **clears** the badge and
-   banner. (The note is in-app only, never written to the audit log.)
-6. **Doctor — finalize.** Once satisfied, **Finalize** (→ Summarized). **Look for:**
-   finalize is **doctor-only**, and once finalized the summary is **immutable** —
-   corrections would be append-only addendums. The **finalizing doctor can still read**
-   the summary they signed, even on a nurse-run case they didn't run (ADR-0023).
-7. **Patient** — refresh `/patient`/the summary. **Look for:** the patient can now read
-   the **finalized** summary.
+3. **Nurse** — **Start session** in the room (`/consultations/:id`, state → In
+   session). Send a message; as the patient, attach a photo or PDF under **Files**.
+   **Look for:** messages and files arriving **live** on the other side, with sender
+   labels, and the other party's online status in the header.
+4. **Nurse** — type the summary in **Clinical summary**. **Look for:** typing shows
+   **Unsaved changes** and sends nothing; **Save draft** persists it ("Saved at …").
+   Then **End consultation** — it asks for confirmation and saves an unsaved draft
+   first (ADR-0026). The nurse has no **Finalize** action. With the doctor's **Pending
+   sign-off** page open in the other window, **look for** the case appearing there
+   **without a refresh** (ADR-0020/0027).
+5. **Doctor — request changes (optional).** As `doctor@vcp.local`, open the case from
+   **Pending sign-off**: the intake and the saved draft are shown read-only. Add a note
+   and click **Request changes**. **Look for:** the case stays **Ended**; in the nurse's
+   room a **banner with the note** appears **immediately** and the button becomes **Save
+   revision**; their **My consultations** list shows "Changes requested — revise the
+   summary"; the worklist marks the case **Returned to drafter** (ADR-0024/0025/0027).
+   The nurse edits — nothing reaches the doctor until they click **Save revision**, at
+   which point the doctor's open copy updates live ("the drafter saved a revision").
+   The note is in-app only, never written to the audit log.
+6. **Doctor — finalize.** **Finalize & sign off**, then confirm (→ Summarized). **Look
+   for:** finalize is **doctor-only** and the summary becomes **immutable**; on the
+   summary page a clinician can only **add an addendum**, which is appended and shown
+   to the patient. The **finalizing doctor can still read** the summary they signed,
+   even on a nurse-run case (ADR-0023).
+7. **Patient** — **look for** a "summary is ready" toast; open **View summary** to read
+   the finalized summary and its addenda (and **Print** it).
+8. **Session expiry** — JWTs are short-lived (`JWT_EXPIRES_IN`, 15 min locally). When
+   one expires, the next action returns the user to the login screen with "Your
+   session has ended" instead of leaving a signed-in page that silently fails.
 
 ---
 
@@ -136,10 +148,16 @@ The guarantee lives in the **database**, not the UI (ADR-0003, invariant 2).
   open a consultation room, messages, attachments or summary** — the admin is refused
   clinical content everywhere (invariant 3, SC-6). This is enforced server-side: even
   calling the clinical API directly as an admin returns 403.
-- **Audit trail** — in `/audit`, filter by consultation / event type / actor. **Look
-  for:** every state change, claim, finalize and attachment access is recorded as
-  **who / what / when** — and **never** a message body, attachment content or summary
-  text. Each row carries a `correlationId` tying it back to the request that caused it.
+- **Audit trail** — in `/audit`, filter by event, actor, consultation and date range
+  (click an actor or consultation in a row to filter by it); older events are paged.
+  **Look for:** every state change, claim, finalize and attachment access is recorded as
+  **who / what / when** — actors shown by email, details as readable key/value pairs —
+  and **never** a message body, attachment content or summary text. Each row's
+  **Trace id** (its `correlationId`, full value on hover) ties it back to the request
+  that caused it.
+- **Deactivation** — on **Users**, search/filter accounts and **Deactivate** a
+  clinician. **Look for:** a confirmation explaining that their claimed cases return to
+  the queue (ADR-0012).
 - **Role/state gating** — try an action out of turn (e.g. a nurse finalizing, or acting
   on a case they don't own). **Look for:** a role violation is **403**, an action
   illegal from the current state is **409** — both from the single authorization matrix.

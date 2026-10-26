@@ -1,6 +1,6 @@
 # ADR-0022: Autosave the summary draft (remove the manual "Save draft")
 
-- **Status:** Accepted
+- **Status:** Superseded by [ADR-0026](0026-explicit-summary-save.md)
 - **Date:** 2026-10-25
 - **Deciders:** Project owner
 

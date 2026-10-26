@@ -50,6 +50,7 @@ ownership condition checked after the role gate.
 | `POST /consultations`                | P     | —                                                        | intake (below) | `201` my-consultation view (QUEUED)          |
 | `GET /consultations/queue`           | N,D   | —                                                        | —              | `200` minimal pre-claim list (priority→FIFO) |
 | `GET /consultations/mine`            | P     | owner                                                    | —              | `200` own consultations + "N ahead"          |
+| `GET /consultations/assigned`        | N,D   | own claims (`claimedBy` = caller)                        | —              | `200` minimal list of the caller's cases     |
 | `GET /consultations/pending-signoff` | D     | `state=ENDED` + drafted-unfinalized summary              | —              | `200` minimal sign-off worklist              |
 | `GET /consultations/:id`             | P,N,D | participant · _or_ doctor while `state=ENDED` (sign-off) | —              | `200` full detail + intake                   |
 | `POST /consultations/:id/claim`      | N,D   | `state=QUEUED` (DB-atomic)                               | —              | `200` CLAIMED · `409` if already claimed     |
@@ -65,6 +66,19 @@ optional `priority` (`ROUTINE`\|`URGENT`\|`EMERGENCY`), `history`, `medications`
 The **pre-claim queue item** exposes only: `priority`, `symptomCategory`, `severity`,
 a truncated `complaintSummary`, `enqueuedAt`, `waitingSeconds` — never patient
 identity or attachments (data minimization, FR-7/C7).
+
+The **list views** are deliberately minimal (invariant 6) — a short complaint label,
+never the full narrative or summary text:
+
+| View                       | Fields                                                                                                                                                               |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mine` (patient)           | `id`, `state`, `priority`, `createdAt`, `complaintSummary` (their own, ≤100 chars), `position` (QUEUED only), `summaryAvailable`                                     |
+| `assigned` (clinician)     | `id`, `state`, `priority`, `symptomCategory`, `complaintSummary`, `claimedAt`/`startedAt`/`endedAt`, `summaryDrafted`, `summaryFinalized`, `summaryChangesRequested` |
+| `pending-signoff` (doctor) | `id`, `priority`, `symptomCategory`, `complaintSummary`, `endedAt`, `draftedBy`, `draftedAt`, `changesRequested` (returned to the drafter, not yet revised)          |
+
+`summaryDrafted: false` on an `ENDED` case is what the clinician UI flags as "Write
+the summary": without a saved draft the case cannot reach the sign-off worklist
+([ADR-0026](adr/0026-explicit-summary-save.md)).
 
 ## Messaging (clinical content — admin denied)
 
@@ -146,18 +160,22 @@ Audit records carry **who / what / when** only — never message bodies, attachm
 contents/filenames, or summary text (invariants 5 & 6). The full catalogue and log
 schema are in [audit-logging.md](audit-logging.md).
 
-### Audit event catalogue (Phase 2 subset)
+### Audit event catalogue
 
+`LOGIN_SUCCESS`, `LOGIN_FAILURE`, `USER_DEACTIVATED`, `USER_REACTIVATED`,
 `CONSULTATION_REQUESTED`, `CONSULTATION_ENQUEUED`, `CONSULTATION_CLAIMED`,
-`CONSULTATION_REQUEUED`, `CONSULTATION_STARTED`, `CONSULTATION_COMPLETED`,
-`CONSULTATION_CANCELLED`, `PRIORITY_CHANGED`, `MESSAGE_SENT`, `SUMMARY_DRAFTED`,
-`SUMMARY_FINALIZED`.
+`CONSULTATION_REQUEUED`, `CONSULTATION_REASSIGNED`, `CONSULTATION_STARTED`,
+`CONSULTATION_COMPLETED`, `CONSULTATION_CANCELLED`, `PRIORITY_CHANGED`,
+`MESSAGE_SENT`, `ATTACHMENT_UPLOADED`, `ATTACHMENT_ACCESSED`, `SUMMARY_DRAFTED`,
+`SUMMARY_FINALIZED`, `SUMMARY_CHANGES_REQUESTED`, `SUMMARY_ADDENDUM_ADDED`
+(single source: `backend/src/audit/audit-events.ts`).
 
-`CONSULTATION_REQUEUED` (Phase 3) is the claim-start-TTL auto-requeue: a **system**
-event (no actor) with metadata `{ reason: "start_ttl_expired", ttlSeconds,
-previousClaimedBy }` — who/what/when only, never clinical content.
-
-The full catalogue and log schema are formalized in `audit-logging.md` (Phase 4).
+`CONSULTATION_REQUEUED` (claim-start TTL) and `CONSULTATION_REASSIGNED`
+(deactivation) are **system** events (no actor) with metadata such as `{ reason,
+previousClaimedBy }` — who/what/when only, never clinical content. The admin audit
+screen shows actor ids as the account email (from `GET /users`) and filters by
+event, actor, consultation and date range. The full catalogue with metadata and the
+log schema are in [audit-logging.md](audit-logging.md).
 
 ## WebSocket API (Phase 3)
 
@@ -181,11 +199,12 @@ Room membership is granted only after the same authorization check as REST
 (role → state → ownership). No payload carries clinical content beyond what the
 room's members are already permitted to read (data minimization, invariants 3 & 6).
 
-| Room                | Who may join                     | Authorized by              |
-| ------------------- | -------------------------------- | -------------------------- |
-| `queue`             | Nurse / Doctor                   | matrix `VIEW_QUEUE`        |
-| `consultation:<id>` | That consultation's participants | matrix `VIEW_CONSULTATION` |
-| `user:<id>`         | That user only (auto-joined)     | the authenticated identity |
+| Room                | Who may join                                                    | Authorized by                                                                                |
+| ------------------- | --------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `queue`             | Nurse / Doctor                                                  | matrix `VIEW_QUEUE`                                                                          |
+| `consultation:<id>` | That consultation's participants (and a doctor during sign-off) | matrix `VIEW_CONSULTATION`                                                                   |
+| `user:<id>`         | That user only (auto-joined)                                    | the authenticated identity                                                                   |
+| `signoff`           | Every doctor (auto-joined on connect)                           | the verified JWT role is `DOCTOR` ([ADR-0027](adr/0027-live-summary-and-signoff-signals.md)) |
 
 Admins can connect (to use REST admin features) but are **refused** every clinical
 room — separation of duties holds over WebSockets.
@@ -205,13 +224,21 @@ Each returns an ack `{ ok: boolean, error?: 'unauthorized'|'forbidden'|'not_foun
 | Event                       | Payload                                                          | Trigger                                                                                           |
 | --------------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
 | `queue:updated`             | `{ reason, consultationId? }`                                    | enqueue · priority change · claim · requeue · complete · cancel (FR-18/C18)                       |
-| `consultation:updated`      | `{ consultationId, state }`                                      | any state change on the consultation                                                              |
+| `consultation:updated`      | `{ consultationId, state }`                                      | any state change; to the room and the patient's and assigned clinician's personal rooms           |
 | `message:created`           | `{ consultationId, message: { id, senderId, body, createdAt } }` | a new message (private room only; body is allowed here)                                           |
 | `summary:changes-requested` | `{ consultationId, note? }`                                      | a doctor returned a draft to its author to revise; to the drafter's personal room only (ADR-0024) |
+| `summary:updated`           | `{ consultationId, reason }`                                     | draft saved · changes requested · finalized · case ended; to `signoff` + the assignee (ADR-0027)  |
+| `attachment:created`        | `{ consultationId }`                                             | a file was shared; to the consultation room, whose members re-fetch the list (ADR-0027)           |
 | `position:updated`          | `{ consultationId, state, position }`                            | a patient's live "N ahead" changed (C2/FR-4)                                                      |
 | `presence:updated`          | `{ consultationId, participants: [{ userId, online }] }`         | a participant connected/disconnected/joined/left                                                  |
 
-`reason` ∈ `enqueued | priority_changed | claimed | requeued | completed | cancelled | state_changed`.
+`queue:updated` `reason` ∈ `enqueued | priority_changed | claimed | requeued | reassigned | completed | cancelled | state_changed`.
+`summary:updated` `reason` ∈ `drafted | changes_requested | finalized | ended`.
+
+`summary:updated` and `attachment:created` are **content-free signals**: no summary
+text, review note, filename or file rides them, and `summary:updated` is never sent
+to the patient (a draft is not theirs to see). Recipients reconcile through the REST
+endpoints above, which apply the authorization matrix as usual.
 
 ### Reconnection & degradation
 

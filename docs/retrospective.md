@@ -62,6 +62,18 @@ where the real engineering judgment shows.
   WebSocket push. But it had leaked into `getMine` as a per-row lookup, creating an
   **N+1 shape** that fanned out into per-row `COUNT`s on the Redis-down degrade path.
   The cache abstraction was hiding a cost at its call sites.
+- **"Autosave is always friendlier than a Save button."** Autosave
+  ([ADR-0022](adr/0022-autosave-summary-draft.md)) fixed a real stranding bug, but once
+  saving a draft also _handed it to every doctor_ and _answered a change request_, it
+  did both on the first pause in typing — a doctor could sign a half-written revision.
+  Walking the nurse → doctor flow end to end in two browsers exposed it; the fix was an
+  explicit save with safety nets ([ADR-0026](adr/0026-explicit-summary-save.md)). The
+  meaning of an action can change under a UI decision as the workflow grows.
+- **"The new workflow pieces are live like the rest."** The sign-off hand-off was the
+  one flow still running on 20-second polling, because its audience ("any doctor") had
+  no room. It took a `signoff` room and content-free signals
+  ([ADR-0027](adr/0027-live-summary-and-signoff-signals.md)) to make it as live as the
+  queue — the gap was only visible when testing the roles side by side.
 
 ## Risks that actually materialised (vs. the Phase 0 register)
 

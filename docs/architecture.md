@@ -118,6 +118,7 @@ flowchart TB
     realtime --> prisma
     attach --> prisma
     attach --> audit
+    attach --> realtime
     usersm --> consult
     usersm --> realtime
     usersm --> audit
@@ -354,12 +355,18 @@ the real-time layer honest:
 - **The matrix governs WebSockets too.** The JWT is verified on the handshake;
   joining the `queue` room is clinician-only and joining a `consultation:<id>` room
   runs the same `authorizeConsultationAction` (role → state → ownership) as REST —
-  so admins and non-participants are refused (invariants 3 & 4).
+  so admins and non-participants are refused (invariants 3 & 4). Every user is in
+  their personal `user:<id>` room, and every doctor in the `signoff` room — both
+  derived from the verified JWT on connect, never requested by the client.
 
 Events (no clinical content beyond what the room's members may already see):
 `queue:updated` (signal → re-fetch the queue), `consultation:updated`
-(state changed), `message:created` (into the private room only),
-`position:updated` (a patient's "N ahead"), `presence:updated`.
+(state changed — also to the assigned clinician's personal room),
+`message:created` (into the private room only), `attachment:created` (signal →
+re-fetch the file list), `position:updated` (a patient's "N ahead"),
+`presence:updated`, `summary:changes-requested` (the drafter only, with the
+doctor's note) and `summary:updated` (content-free; doctors + the assignee). The
+full contract is in [api-spec.md §WebSocket API](api-spec.md#websocket-api-phase-3).
 
 ### 7.1 Real-time fan-out across instances
 
@@ -443,6 +450,39 @@ Connection loss changes nothing server-side (state-machine.md "connection loss"
 exception). On reconnect the client re-authenticates, the gateway re-authorizes
 every room join, and the UI pulls the authoritative state over REST — missed
 events don't matter because the client re-reads the source of truth.
+
+### 7.4 Live summary hand-off — nurse drafts, any doctor signs (ADR-0026/0027)
+
+A nurse-run case is signed off by **any** doctor (ADR-0020), so summary changes are
+signalled to the `signoff` room (every doctor) and to the drafter's personal room —
+never to the patient. Saving is explicit (ADR-0026): nothing reaches a reviewer while
+the drafter is still typing.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor N as Nurse (drafter)
+    participant API as API (summaries)
+    participant RT as RealtimeService
+    actor D as Doctor (any)
+
+    N->>API: Save draft (POST /summary), then End consultation
+    API->>RT: summary:updated {id, reason}
+    RT-->>D: signoff room → worklist shows the case
+    D->>API: Request changes {note}
+    API->>RT: summary:changes-requested {id, note} + summary:updated
+    RT-->>N: user:<nurse> → toast + revise banner, live
+    Note over N: edits locally — "Unsaved changes", nothing sent
+    N->>API: Save revision (clears the request)
+    API->>RT: summary:updated {id, drafted}
+    RT-->>D: open review re-reads the draft over REST
+    D->>API: Finalize & sign off → SUMMARIZED
+    API->>RT: consultation:updated + summary:updated {finalized}
+    RT-->>N: list + room show the signed summary
+```
+
+The signals carry an id and a reason only; every read goes back through REST and the
+authorization matrix, so the live path never widens exposure (invariants 4 & 6).
 
 ---
 

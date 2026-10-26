@@ -78,6 +78,7 @@ covered regardless of the coverage percentage.
 | CS-16 | A request is traceable end-to-end by correlation ID                   | `test/e2e/observability.e2e-spec.ts`                     | SC-15 / ADR-0013         |
 | CS-17 | Readiness reflects dependencies (Postgres gates; Redis non-gating)    | `test/e2e/observability.e2e-spec.ts`                     | SC-15 / ADR-0004         |
 | CS-18 | No PII/clinical data (nor headers/query) ever reaches the logs        | `logging-redaction.spec.ts` + audit no-content (CS-15)   | SC-9 / NFR-2             |
+| CS-19 | Summary hand-off is live, content-free, and never reaches the patient | `test/e2e/realtime.e2e-spec.ts` + room/worklist specs    | FR-13 / ADR-0026/0027    |
 
 ### How the concurrency test proves correctness (CS-2)
 
@@ -100,6 +101,13 @@ clients**:
   and an admin are refused `subscribe:queue`; an admin and a non-participant
   clinician are refused `join:consultation` — the same boundaries as REST
   (invariants 3 & 4).
+- **CS-19 (live summary hand-off):** a nurse ends a case with a saved draft and a
+  doctor's socket — in no consultation room — receives `summary:updated` via the
+  `signoff` room; a change request reaches the nurse's personal room with **no note
+  text** in the signal; the nurse's revision reaches the doctor; the patient, joined
+  to the case room, receives **none** of these. The frontend specs prove the other
+  half: typing never saves (only **Save** does), a live signal never overwrites text
+  being edited, and the reviewer's copy and worklist refresh on the signal.
 - **CS-8 (claim-TTL requeue):** a case is claimed and its `claimed_at` back-dated
   past the TTL; one sweep requeues it (`CLAIMED → QUEUED`, `claimed_by` cleared) and
   writes exactly one `CONSULTATION_REQUEUED` audit row. A case still within the TTL,
@@ -246,10 +254,10 @@ these are **gates, not observations** — a drop below threshold fails CI.
 --workspace backend` (needs the test DB + Redis up). Current: ~93% stmts / ~71%
   branch.
 - **Frontend — Vitest v8.** `npm run test:cov --workspace frontend` gates statements /
-  lines / functions / branches at **≥ 80%**. Current: ~95% stmts.
+  lines / functions / branches at **≥ 80%**. Current: ~93% stmts.
 - **Exclusions** (excluded, not fake-tested): DI modules, DTO shells, `main.ts`, the
   Prisma seed, and the main-only socket.io Redis adapter.
-- **Critical scenarios stay the priority (SC-12):** CS-1 … CS-18 are covered
+- **Critical scenarios stay the priority (SC-12):** CS-1 … CS-19 are covered
   regardless of the percentage; the added tests closed real gaps (e.g. summary
   addendums, deactivation guards, Redis-degrade paths), not vanity lines.
 

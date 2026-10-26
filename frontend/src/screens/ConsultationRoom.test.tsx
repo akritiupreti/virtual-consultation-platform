@@ -15,6 +15,7 @@ const mock = vi.hoisted(() => ({
   complete: vi.fn(),
   finalizeSummary: vi.fn(),
   draftSummary: vi.fn(),
+  requestSummaryChanges: vi.fn(),
 }));
 vi.mock('../lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../lib/api')>();
@@ -42,6 +43,7 @@ describe('ConsultationRoom screen', () => {
     mock.complete.mockReset();
     mock.finalizeSummary.mockReset();
     mock.draftSummary.mockReset();
+    mock.requestSummaryChanges.mockReset();
   });
 
   it('renders intake, state and messages', async () => {
@@ -117,6 +119,25 @@ describe('ConsultationRoom screen', () => {
     // Finalizes the existing draft as-is — never re-drafts (that would 403 for a non-assigned doctor).
     expect(mock.draftSummary).not.toHaveBeenCalled();
     expect(mock.finalizeSummary).toHaveBeenCalledWith('c-1');
+  });
+
+  it('lets a reviewing doctor return a nurse-run draft for changes with a note (ADR-0024)', async () => {
+    mock.getConsultation.mockResolvedValue(
+      fixtures.consultation({ state: 'ENDED', claimedBy: 'u-nurse' }),
+    );
+    mock.getSummary.mockResolvedValue(
+      fixtures.summary({ finalized: false, content: 'Nurse-authored draft' }),
+    );
+    mock.requestSummaryChanges.mockResolvedValue(fixtures.summary({ finalized: false }));
+    const { user, findByLabelText, getByRole, findByText } = render(fixtures.users.doctor);
+
+    await user.type(await findByLabelText(/note for the drafter/i), 'Please add the BP reading.');
+    await user.click(getByRole('button', { name: /request changes/i }));
+
+    expect(mock.requestSummaryChanges).toHaveBeenCalledWith('c-1', 'Please add the BP reading.');
+    expect(await findByText(/drafter has been asked to revise/i)).toBeInTheDocument();
+    // Requesting changes must not finalize the summary.
+    expect(mock.finalizeSummary).not.toHaveBeenCalled();
   });
 
   it('finalizing saves the current draft then locks it, after confirmation', async () => {

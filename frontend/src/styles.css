@@ -461,6 +461,18 @@ tbody tr:last-child td {
   font-size: 0.9rem;
 }
 
+/* ── Doctor sign-off actions (summary draft) ──────────────────────────────── */
+.signoff-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.signoff-actions .change-note {
+  width: 100%;
+}
+
 /* ── Messaging ────────────────────────────────────────────────────────────── */
 .messages {
   display: flex;

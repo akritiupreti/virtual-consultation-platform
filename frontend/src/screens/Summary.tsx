@@ -9,6 +9,8 @@ export default function SummaryScreen(): JSX.Element {
   const { user } = useAuth();
   const [summary, setSummary] = useState<Summary | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [note, setNote] = useState('');
+  const [notice, setNotice] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
@@ -25,11 +27,27 @@ export default function SummaryScreen(): JSX.Element {
 
   async function finalize(): Promise<void> {
     setError(null);
+    setNotice(null);
     try {
       await api.finalizeSummary(id);
       await load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to finalize');
+    }
+  }
+
+  // Return the draft to its author to revise instead of signing it (ADR-0024). The
+  // draft is unchanged, so there is nothing to reload; the optional note is sent to
+  // the drafter in real time.
+  async function requestChanges(): Promise<void> {
+    setError(null);
+    setNotice(null);
+    try {
+      await api.requestSummaryChanges(id, note.trim() || undefined);
+      setNote('');
+      setNotice('Changes requested — the draft has been returned to the drafter to revise.');
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to request changes');
     }
   }
 
@@ -41,6 +59,11 @@ export default function SummaryScreen(): JSX.Element {
         <Link to={`/consultations/${id}`}>Back to room</Link>
       </div>
       {error && <p className="error">{error}</p>}
+      {notice && (
+        <p className="notice" role="status">
+          {notice}
+        </p>
+      )}
 
       {summary && (
         <div className="card">
@@ -51,7 +74,24 @@ export default function SummaryScreen(): JSX.Element {
           </p>
           <pre>{summary.content}</pre>
           {user?.role === 'DOCTOR' && !summary.finalized && (
-            <button onClick={() => void finalize()}>Finalize (doctor only)</button>
+            <div className="signoff-actions">
+              <label htmlFor="change-note">Note for the drafter (optional)</label>
+              <textarea
+                id="change-note"
+                className="change-note"
+                rows={3}
+                value={note}
+                maxLength={2000}
+                placeholder="What should the drafter revise before this is signed?"
+                onChange={(e) => setNote(e.target.value)}
+              />
+              <div className="row" style={{ gap: 8 }}>
+                <button onClick={() => void finalize()}>Finalize (doctor only)</button>
+                <button className="secondary" onClick={() => void requestChanges()}>
+                  Request changes
+                </button>
+              </div>
+            </div>
           )}
         </div>
       )}

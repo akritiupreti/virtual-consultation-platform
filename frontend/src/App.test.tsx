@@ -17,6 +17,7 @@ vi.mock('./lib/realtime', () => ({
   useQueueUpdates: () => undefined,
   usePatientUpdates: () => undefined,
   useConsultationRoom: () => undefined,
+  useSummaryChangeRequests: () => undefined,
   disconnectRealtime: () => undefined,
 }));
 

@@ -126,6 +126,12 @@ describe('api client', () => {
       'POST',
       '/consultations/c-1/summary/finalize',
     ],
+    [
+      'requestSummaryChanges',
+      () => api.requestSummaryChanges('c-1', 'note'),
+      'POST',
+      '/consultations/c-1/summary/request-changes',
+    ],
     ['getSummary', () => api.getSummary('c-1'), 'GET', '/consultations/c-1/summary'],
     ['getAudit', () => api.getAudit(), 'GET', '/audit'],
     ['getUsers', () => api.getUsers(), 'GET', '/users'],
@@ -138,5 +144,14 @@ describe('api client', () => {
     expect(url).toBe(`http://localhost:3000${path}`);
     // GET wrappers pass no explicit method (fetch defaults to GET).
     expect(init.method ?? 'GET').toBe(method);
+  });
+
+  it('requestSummaryChanges sends the note when given, and an empty body when not', async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue(jsonResponse({}));
+    await api.requestSummaryChanges('c-1', 'Add the BP reading');
+    await api.requestSummaryChanges('c-1');
+    const calls = (fetch as ReturnType<typeof vi.fn>).mock.calls;
+    expect(JSON.parse(calls[0][1].body)).toEqual({ note: 'Add the BP reading' });
+    expect(JSON.parse(calls[1][1].body)).toEqual({});
   });
 });

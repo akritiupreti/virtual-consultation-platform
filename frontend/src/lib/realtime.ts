@@ -102,6 +102,36 @@ export function usePatientUpdates(onChange: () => void): void {
   }, []);
 }
 
+export interface SummaryChangesRequested {
+  consultationId: string;
+  note?: string;
+}
+
+/**
+ * Clinician-side: the drafter is notified when a reviewing doctor returns their
+ * summary draft for changes (ADR-0024). The server emits `summary:changes-requested`
+ * only to the recipient's own personal room (auto-joined on connect), so no explicit
+ * subscription is needed and it arrives on whatever screen the clinician is viewing.
+ */
+export function useSummaryChangeRequests(
+  onRequest: (payload: SummaryChangesRequested) => void,
+): void {
+  const cb = useRef(onRequest);
+  cb.current = onRequest;
+
+  useEffect(() => {
+    const s = getRealtimeSocket();
+    if (!s) {
+      return;
+    }
+    const handler = (payload: SummaryChangesRequested): void => cb.current(payload);
+    s.on('summary:changes-requested', handler);
+    return () => {
+      s.off('summary:changes-requested', handler);
+    };
+  }, []);
+}
+
 export interface RoomHandlers {
   onMessage?: (message: Message) => void;
   onConsultationUpdated?: () => void;

@@ -16,6 +16,10 @@ export default function ConsultationRoom(): JSX.Element {
   const [text, setText] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
+  // Doctor "request changes" (ADR-0024): an optional note back to the drafter, and
+  // a confirmation that the draft was returned.
+  const [changeNote, setChangeNote] = useState('');
+  const [changeNotice, setChangeNotice] = useState<string | null>(null);
   // Draft autosave status (the draft persists on its own — there is no Save button).
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   // The last value successfully persisted, so we neither re-save an unchanged draft
@@ -145,6 +149,23 @@ export default function ConsultationRoom(): JSX.Element {
     }
   }
 
+  // Return the draft to its author to revise instead of signing it (ADR-0024). The
+  // case stays ENDED, so the doctor keeps read access here; the drafter is notified
+  // and can re-draft, then a doctor finalizes.
+  async function requestChanges(): Promise<void> {
+    setError(null);
+    setChangeNotice(null);
+    try {
+      await api.requestSummaryChanges(id, changeNote.trim() || undefined);
+      setChangeNote('');
+      setChangeNotice(
+        'Changes requested — the drafter has been asked to revise. Sign off once they update it.',
+      );
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to request changes');
+    }
+  }
+
   async function send(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
     if (!text.trim()) {
@@ -267,13 +288,34 @@ export default function ConsultationRoom(): JSX.Element {
               <textarea id="draft-review" value={draft} readOnly />
               <p className="muted" style={{ marginTop: 8 }}>
                 Drafted by the clinician who ran this consultation. Review it, then sign off to
-                finalize. After finalizing, corrections can only be added as addenda.
+                finalize — or return it for changes. After finalizing, corrections can only be added
+                as addenda.
               </p>
+              <label htmlFor="review-note" style={{ marginTop: 8 }}>
+                Note for the drafter (optional)
+              </label>
+              <textarea
+                id="review-note"
+                className="change-note"
+                rows={2}
+                value={changeNote}
+                maxLength={2000}
+                placeholder="What should the drafter revise before this is signed?"
+                onChange={(e) => setChangeNote(e.target.value)}
+              />
               <div className="inline" style={{ marginTop: 8 }}>
                 <button disabled={!draft.trim()} onClick={() => setConfirming(true)}>
                   Finalize &amp; sign off
                 </button>
+                <button className="secondary" onClick={() => void requestChanges()}>
+                  Request changes
+                </button>
               </div>
+              {changeNotice && (
+                <p className="notice" role="status" style={{ marginTop: 8 }}>
+                  {changeNotice}
+                </p>
+              )}
             </div>
           )}
 

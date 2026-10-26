@@ -242,6 +242,10 @@ export const api = {
     apiFetch(`/consultations/${id}/summary`, body({ content })),
   finalizeSummary: (id: string): Promise<Summary> =>
     apiFetch(`/consultations/${id}/summary/finalize`, body({})),
+  // A reviewing doctor returns the draft to the drafter to revise (ADR-0024). The
+  // optional note is feedback for the drafter; the draft is returned unchanged.
+  requestSummaryChanges: (id: string, note?: string): Promise<Summary> =>
+    apiFetch(`/consultations/${id}/summary/request-changes`, body(note ? { note } : {})),
   getSummary: (id: string): Promise<Summary> => apiFetch(`/consultations/${id}/summary`),
 
   // The server paginates the audit trail ({ items, total, limit, offset }); the

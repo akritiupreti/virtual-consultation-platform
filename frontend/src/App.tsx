@@ -2,6 +2,7 @@ import { JSX } from 'react';
 import { Link, NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { Role } from './lib/api';
 import { homePathFor, useAuth } from './lib/auth';
+import { useClinicianNotifications } from './lib/clinicianNotifications';
 import AdminAudit from './screens/AdminAudit';
 import AdminUsers from './screens/AdminUsers';
 import ConsultationRoom from './screens/ConsultationRoom';
@@ -89,12 +90,24 @@ function NavBar(): JSX.Element | null {
   );
 }
 
+/**
+ * Mounts the clinician toast listener for the length of a nurse/doctor session, so
+ * a "revise this summary" request (ADR-0024) reaches them on any screen. Renders
+ * nothing; a separate component keeps the socket subscription out of App's render.
+ */
+function ClinicianNotifications(): null {
+  useClinicianNotifications();
+  return null;
+}
+
 export default function App(): JSX.Element {
   const { user } = useAuth();
   const fallback = user ? homePathFor(user.role) : '/login';
+  const isClinician = user?.role === 'NURSE' || user?.role === 'DOCTOR';
 
   return (
     <div className="app">
+      {isClinician && <ClinicianNotifications />}
       <NavBar />
       <main className="container">
         <Routes>

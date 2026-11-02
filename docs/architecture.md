@@ -43,6 +43,7 @@ flowchart LR
     spa -->|HTTPS / JSON| api
     spa -->|WSS| ws
     api --> db
+    ws --> db
     ws --> redis
     api --> redis
     api --> obj
@@ -52,7 +53,9 @@ The REST API and the WebSocket gateway (Phase 3) are both live; object storage f
 attachments arrives in Phase 4 as a local filesystem store reached only through
 **app-issued signed URLs** ([ADR-0007](adr/0007-attachment-storage.md)) — the bytes
 are never served directly. The backend is the only thing that touches the database —
-clients never do. Redis is reachable from both the gateway (pub/sub fan-out,
+clients never do. Both doors read it: the gateway checks PostgreSQL when a socket
+connects (is the account still active?) and when it joins a consultation room
+(authorization). Redis is reachable from both the gateway (pub/sub fan-out,
 presence) and the API (cached positions), but it is **not** a source of truth
 ([ADR-0004](adr/0004-redis-responsibilities.md)); PostgreSQL is.
 

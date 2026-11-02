@@ -42,9 +42,9 @@ stateDiagram-v2
 | --------------------- | ------------------ | ----------------------------------------------------------------------------------- |
 | REQUESTED → QUEUED    | System             | Intake valid, consent granted, priority assigned                                    |
 | REQUESTED → CANCELLED | Patient (owner)    | Before enqueue                                                                      |
-| QUEUED → CLAIMED      | Nurse / Doctor     | `state=QUEUED AND claimed_by IS NULL` (atomic); actor under claim cap               |
+| QUEUED → CLAIMED      | Nurse / Doctor     | `state=QUEUED AND claimed_by IS NULL` (atomic)                                      |
 | QUEUED → CANCELLED    | Patient (owner)    | Not yet claimed                                                                     |
-| CLAIMED → IN_SESSION  | Claiming clinician | `actor = claimed_by`; within start TTL                                              |
+| CLAIMED → IN_SESSION  | Claiming clinician | `actor = claimed_by`; within start TTL; under active-session cap                    |
 | CLAIMED → QUEUED      | System             | Start TTL expired; clears `claimed_by`; audited (`REQUEUE`)                         |
 | CLAIMED → QUEUED      | System             | Assigned clinician deactivated; clears `claimed_by`; audited (`REASSIGN`)           |
 | CLAIMED → CANCELLED   | Patient (owner)    | Before session starts                                                               |
@@ -58,6 +58,7 @@ stateDiagram-v2
 | -------------------------------------- | ----------------------- | ----------------- |
 | QUEUED → IN_SESSION                    | Must be claimed first   | `409 Conflict`    |
 | CLAIMED → IN_SESSION by a non-claimer  | `actor ≠ claimed_by`    | `403 Forbidden`   |
+| CLAIMED → IN_SESSION at session cap    | Already in max sessions | `409 Conflict`    |
 | Second clinician claims a CLAIMED case | Already claimed         | `409 Conflict`    |
 | ENDED → IN_SESSION                     | No reopening            | `409 Conflict`    |
 | ENDED → SUMMARIZED by a nurse          | Finalize is doctor-only | `403 Forbidden`   |
@@ -70,6 +71,10 @@ stateDiagram-v2
   auto-requeued (`CLAIMED → QUEUED`), `claimed_by` cleared, event audited, queue
   subscribers notified. Implemented in Phase 3 by a DB-authoritative sweeper
   ([ADR-0010](adr/0010-claim-start-ttl.md)) and audited as `CONSULTATION_REQUEUED`.
+- **Session cap, not a claim cap:** `MAX_ACTIVE_CONSULTATIONS_PER_CLINICIAN` (default
+  1, FR-10) limits `IN_SESSION` cases and is checked at `start`. There is no separate
+  limit on how many cases one clinician can hold in `CLAIMED`; the start TTL returns
+  any they do not start.
 - **Clinician deactivated mid-session:** a `CLAIMED` or `IN_SESSION` case held by
   the deactivated clinician is paused and returned to the queue via the `REASSIGN`
   system transition (→ `QUEUED`, clears `claimed_by`/`started_at`, keeps the

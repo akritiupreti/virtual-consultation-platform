@@ -207,7 +207,10 @@ curl -s http://localhost:3100/metrics     # Prometheus metrics
 open http://localhost:8088
 
 # Seed demo users (patient|nurse|doctor|admin@vcp.local) — runs inside the container
-docker compose exec backend node_modules/.bin/ts-node backend/src/prisma/seed.ts  # or: npm run seed
+docker compose exec backend node_modules/.bin/ts-node backend/src/prisma/seed.ts
+# …or from the host (after npm install):
+npm run prisma:generate --workspace backend
+npm run seed --workspace backend
 
 # Tear down (keep data) / wipe data too
 docker compose down

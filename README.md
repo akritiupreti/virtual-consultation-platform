@@ -92,6 +92,7 @@ Requires **Docker Desktop** running and a root `.env` (copy from `.env.example`)
 ```bash
 docker compose up -d --build        # Postgres + Redis + backend (auto-migrates) + frontend
 npm install                         # once, for the host-run seed + tests
+npm run prisma:generate --workspace backend  # once, generates the DB client the seed imports
 npm run seed --workspace backend    # demo users + sample consultations (idempotent)
 ```
 

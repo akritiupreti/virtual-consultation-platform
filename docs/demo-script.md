@@ -17,6 +17,7 @@ Related: [README](../README.md) (quickstart) · [architecture](architecture.md) 
 # From the repo root. Requires Docker Desktop running and a root .env (copy .env.example).
 docker compose up -d --build        # Postgres + Redis + backend (migrates on boot) + frontend
 npm install                         # once, for the host-run seed
+npm run prisma:generate --workspace backend  # once, generates the DB client the seed imports
 npm run seed --workspace backend    # demo users + sample consultations (idempotent)
 ```
 

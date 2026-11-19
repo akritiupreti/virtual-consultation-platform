@@ -9,14 +9,14 @@ import {
   DEFAULT_CORRELATION_HEADER,
 } from './common/correlation/correlation.middleware';
 import { CorrelationService } from './common/correlation/correlation.service';
-import { RedisIoAdapter } from './realtime/redis-io.adapter';
+import { CorsIoAdapter } from './realtime/cors-io.adapter';
 
 async function bootstrap(): Promise<void> {
   // Disable the default body parser so we can impose explicit size caps below.
   // bufferLogs defers startup logs until the pino logger is installed below.
   const app = await NestFactory.create(AppModule, { bodyParser: false, bufferLogs: true });
 
-  // Route all framework logging through pino (structured JSON, ADR-0013).
+  // Route all framework logging through pino (structured JSON, ADR-0011).
   app.useLogger(app.get(Logger));
 
   // Correlation ID first of all (SC-15): it must run before the framework and the
@@ -26,9 +26,7 @@ async function bootstrap(): Promise<void> {
 
   app.use(helmet());
 
-  // Cap JSON/urlencoded payloads (input-validation hardening, NFR-1). File uploads
-  // are multipart and handled by multer in the AttachmentsModule with their own
-  // size limit, so they are unaffected by this JSON cap.
+  // Cap JSON/urlencoded payloads (input-validation hardening, NFR-1).
   const bodyLimit = process.env.JSON_BODY_LIMIT ?? '100kb';
   app.use(json({ limit: bodyLimit }));
   app.use(urlencoded({ extended: true, limit: bodyLimit }));
@@ -38,15 +36,9 @@ async function bootstrap(): Promise<void> {
   ];
   app.enableCors({ origin: corsOrigin, credentials: true });
 
-  // WebSocket transport (ADR-0005/0009). The Redis adapter fans events out across
-  // API instances; if REDIS_URL is unset or unreachable it degrades to a
-  // single-instance in-memory adapter and the app keeps working.
-  const wsAdapter = new RedisIoAdapter(app, corsOrigin);
-  const redisUrl = process.env.REDIS_URL;
-  if (redisUrl) {
-    await wsAdapter.connectToRedis(redisUrl);
-  }
-  app.useWebSocketAdapter(wsAdapter);
+  // WebSocket transport (ADR-0004/0007): socket.io with the same CORS origins as
+  // the REST API applied to the handshake.
+  app.useWebSocketAdapter(new CorsIoAdapter(app, corsOrigin));
 
   app.useGlobalPipes(
     new ValidationPipe({

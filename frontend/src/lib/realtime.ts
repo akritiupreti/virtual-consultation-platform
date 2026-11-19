@@ -44,11 +44,6 @@ export function disconnectRealtime(): void {
   }
 }
 
-export interface PresenceParticipant {
-  userId: string;
-  online: boolean;
-}
-
 /** Subscribe to live triage-queue changes; `onChange` re-fetches the queue. */
 export function useQueueUpdates(onChange: () => void): void {
   const cb = useRef(onChange);
@@ -103,7 +98,7 @@ export function usePatientUpdates(onChange: () => void): void {
 /**
  * A clinician's own assigned cases changed state (claimed, started, ended, cancelled
  * by the patient, re-queued, finalized). The server also sends `consultation:updated`
- * to the assigned clinician's personal room (ADR-0027), so "My consultations"
+ * to the assigned clinician's personal room (ADR-0022), so "My consultations"
  * reconciles without polling; `onChange` re-fetches the list.
  */
 export function useAssignedUpdates(onChange: () => void): void {
@@ -125,7 +120,7 @@ export function useAssignedUpdates(onChange: () => void): void {
   }, []);
 }
 
-export type SummaryUpdateReason = 'drafted' | 'changes_requested' | 'finalized' | 'ended';
+export type SummaryUpdateReason = 'drafted' | 'finalized' | 'ended';
 
 export interface SummaryUpdated {
   consultationId: string;
@@ -133,7 +128,7 @@ export interface SummaryUpdated {
 }
 
 /**
- * A summary changed or a case entered the sign-off window (ADR-0027). Delivered to
+ * A summary changed or a case entered the sign-off window (ADR-0022). Delivered to
  * every doctor (the sign-off room, joined on connect) and to the case's assigned
  * clinician. Content-free: `onUpdate` reconciles via REST.
  */
@@ -154,44 +149,12 @@ export function useSummaryUpdates(onUpdate: (payload: SummaryUpdated) => void): 
   }, []);
 }
 
-export interface SummaryChangesRequested {
-  consultationId: string;
-  note?: string;
-}
-
-/**
- * Clinician-side: the drafter is notified when a reviewing doctor returns their
- * summary draft for changes (ADR-0024). The server emits `summary:changes-requested`
- * only to the recipient's own personal room (auto-joined on connect), so no explicit
- * subscription is needed and it arrives on whatever screen the clinician is viewing.
- */
-export function useSummaryChangeRequests(
-  onRequest: (payload: SummaryChangesRequested) => void,
-): void {
-  const cb = useRef(onRequest);
-  cb.current = onRequest;
-
-  useEffect(() => {
-    const s = getRealtimeSocket();
-    if (!s) {
-      return;
-    }
-    const handler = (payload: SummaryChangesRequested): void => cb.current(payload);
-    s.on('summary:changes-requested', handler);
-    return () => {
-      s.off('summary:changes-requested', handler);
-    };
-  }, []);
-}
-
 export interface RoomHandlers {
   onMessage?: (message: Message) => void;
   onConsultationUpdated?: () => void;
-  onPresence?: (participants: PresenceParticipant[]) => void;
-  onAttachment?: () => void;
 }
 
-/** Join a consultation room and receive live messages / state / presence. */
+/** Join a consultation room and receive live messages and state changes. */
 export function useConsultationRoom(id: string, handlers: RoomHandlers): void {
   const ref = useRef(handlers);
   ref.current = handlers;
@@ -220,19 +183,6 @@ export function useConsultationRoom(id: string, handlers: RoomHandlers): void {
         ref.current.onConsultationUpdated?.();
       }
     };
-    const onPresence = (payload: {
-      consultationId?: string;
-      participants: PresenceParticipant[];
-    }): void => {
-      if (mine(payload)) {
-        ref.current.onPresence?.(payload.participants);
-      }
-    };
-    const onAttachment = (payload: { consultationId?: string }): void => {
-      if (mine(payload)) {
-        ref.current.onAttachment?.();
-      }
-    };
 
     if (s.connected) {
       join();
@@ -240,17 +190,11 @@ export function useConsultationRoom(id: string, handlers: RoomHandlers): void {
     s.on('connect', join);
     s.on('message:created', onMessage);
     s.on('consultation:updated', onUpdated);
-    s.on('presence:updated', onPresence);
-    s.on('attachment:created', onAttachment);
-    s.on('attachment:removed', onAttachment);
     return () => {
       s.emit('leave:consultation', { consultationId: id });
       s.off('connect', join);
       s.off('message:created', onMessage);
       s.off('consultation:updated', onUpdated);
-      s.off('presence:updated', onPresence);
-      s.off('attachment:created', onAttachment);
-      s.off('attachment:removed', onAttachment);
     };
   }, [id]);
 }

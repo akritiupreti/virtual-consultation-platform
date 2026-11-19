@@ -19,13 +19,13 @@ All design documentation for the Virtual Consultation Platform. Status legend:
 | [authorization-matrix.md](authorization-matrix.md) | Resource × action × role × state permission matrix                                    | ✅           |
 | [data-model.md](data-model.md)                     | Entities & relationships, ER diagram (+ Mermaid)                                      | ✅           |
 | [architecture.md](architecture.md)                 | System architecture, component responsibilities, trade-offs (+ diagrams)              | ✅           |
-| [api-spec.md](api-spec.md)                         | REST endpoints + WebSocket event contracts + attachments/users/audit (Phase 4)        | ✅ Phase 2–4 |
+| [api-spec.md](api-spec.md)                         | REST endpoints + WebSocket event contracts + users/audit (Phase 4)                    | ✅ Phase 2–4 |
 
 ## Cross-cutting concerns
 
 | Doc                                        | Purpose                                                                                                   | Status       |
 | ------------------------------------------ | --------------------------------------------------------------------------------------------------------- | ------------ |
-| [security-privacy.md](security-privacy.md) | Threat model: unauthorized access, privilege escalation, attachment access, data exposure, mitigations    | ✅ Phase 4   |
+| [security-privacy.md](security-privacy.md) | Threat model: unauthorized access, privilege escalation, data exposure, mitigations                       | ✅ Phase 4   |
 | [audit-logging.md](audit-logging.md)       | Catalogue of auditable events ("important" defined) + log schema + admin query boundary                   | ✅ Phase 4   |
 | [observability.md](observability.md)       | Structured logging, correlation IDs, health/readiness checks, metrics                                     | ✅ Phase 5   |
 | [performance.md](performance.md)           | Hot-path profiling (EXPLAIN evidence), audit-log indexing, N+1 fix, and the changes deliberately not made | ✅ Phase 7   |
@@ -37,5 +37,5 @@ All design documentation for the Virtual Consultation Platform. Status legend:
 
 | Doc                                  | Purpose                                                                                | Status     |
 | ------------------------------------ | -------------------------------------------------------------------------------------- | ---------- |
-| [adr/](adr/)                         | Architecture Decision Records (template + 0001–0029; more added as decisions are made) | 🟡 ongoing |
+| [adr/](adr/)                         | Architecture Decision Records (template + 0001–0023; more added as decisions are made) | 🟡 ongoing |
 | [retrospective.md](retrospective.md) | End-of-project reflection: wrong assumptions, risks, lessons, redesigns                | ✅ Phase 7 |

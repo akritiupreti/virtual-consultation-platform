@@ -10,7 +10,7 @@ const ROLES: Role[] = ['PATIENT', 'NURSE', 'DOCTOR', 'ADMIN'];
 /**
  * Admin-only user management (FR-14, FR-23/24/25). Lists every account and lets an
  * admin deactivate / reactivate others. Separation of duties (invariant 3): this
- * screen shows who/what only — never messages, attachments, or summaries.
+ * screen shows who/what only — never messages or summaries.
  */
 export default function AdminUsers(): JSX.Element {
   const { user } = useAuth();
@@ -73,8 +73,8 @@ export default function AdminUsers(): JSX.Element {
         <div>
           <h1>Users</h1>
           <p className="muted">
-            Admins manage accounts only. No clinical content (messages, attachments, summaries) is
-            ever shown here — separation of duties.
+            Admins manage accounts only. No clinical content (messages or summaries) is ever shown
+            here — separation of duties.
           </p>
         </div>
         {users !== null && (
@@ -207,9 +207,10 @@ export default function AdminUsers(): JSX.Element {
                             >
                               <p>
                                 Deactivate <strong>{u.email}</strong>? They are signed out
-                                immediately and cannot log in.
+                                immediately and cannot log in. Someone in a live consultation cannot
+                                be deactivated until it ends.
                                 {(u.role === 'NURSE' || u.role === 'DOCTOR') &&
-                                  ' Consultations they have claimed or are running return to the queue.'}{' '}
+                                  ' Cases they have claimed but not started return to the queue automatically.'}{' '}
                                 You can reactivate the account later.
                               </p>
                             </ConfirmPanel>

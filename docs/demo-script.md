@@ -15,7 +15,7 @@ Related: [README](../README.md) (quickstart) · [architecture](architecture.md) 
 
 ```bash
 # From the repo root. Requires Docker Desktop running and a root .env (copy .env.example).
-docker compose up -d --build        # Postgres + Redis + backend (migrates on boot) + frontend
+docker compose up -d --build        # Postgres + backend (migrates on boot) + frontend
 npm install                         # once, for the host-run seed
 npm run prisma:generate --workspace backend  # once, generates the DB client the seed imports
 npm run seed --workspace backend    # demo users + sample consultations (idempotent)
@@ -65,12 +65,11 @@ sequenceDiagram
     Pt->>N: chat (persisted + live both ways)
     N->>N: draft summary → Save draft → End consultation
     Note over D: case appears live on Pending sign-off
-    opt Doctor disagrees with the draft
-        D->>N: request changes (optional note) — stays Ended, nurse's room updates live
-        N->>N: revise → Save revision (doctor's open copy updates live)
+    opt Nurse revises the draft
+        N->>N: edit → Save draft (doctor's open copy updates live)
     end
     D->>D: review in the room → Finalize & sign off (doctor-only, immutable)
-    Pt->>Pt: reads the finalized summary (+ any addenda)
+    Pt->>Pt: reads the finalized summary
 ```
 
 1. **Patient** — sign in as `patient@vcp.local` → land on `/patient`. Submit a request
@@ -79,38 +78,31 @@ sequenceDiagram
    ahead of you"** position. Cancelling asks for confirmation first.
 2. **Nurse** — sign in as `nurse@vcp.local` → `/queue`. **Look for:** the queue shows
    only the **pre-claim minimum** (priority, symptom category, severity, a short
-   complaint, wait time) — **no patient identity, no attachments** (data
+   complaint, wait time) — **no patient identity, no full narrative** (data
    minimization, C7). Click **Claim**. **Look for:** the case leaves other clinicians'
    queues instantly.
 3. **Nurse** — **Start session** in the room (`/consultations/:id`, state → In
-   session). Send a message; as the patient, attach a photo or PDF under **Files**.
-   **Look for:** messages and files arriving **live** on the other side, with sender
-   labels, and the other party's online status in the header. The patient can
-   **Remove** a file they shared by mistake (after confirming) — it disappears from the
-   nurse's list live — but only while the session is in progress (ADR-0028).
+   session). Send a message, and reply as the patient. **Look for:** messages arriving
+   **live** on the other side, with sender labels; messaging is open only while the
+   session is in progress.
 4. **Nurse** — type the summary in **Clinical summary**. **Look for:** typing shows
    **Unsaved changes** and sends nothing; **Save draft** persists it ("Saved at …").
    Then **End consultation** — it asks for confirmation and saves an unsaved draft
-   first (ADR-0026). The nurse has no **Finalize** action. With the doctor's **Pending
+   first (ADR-0021). The nurse has no **Finalize** action. With the doctor's **Pending
    sign-off** page open in the other window, **look for** the case appearing there
-   **without a refresh** (ADR-0020/0027).
-5. **Doctor — request changes (optional).** As `doctor@vcp.local`, open the case from
-   **Pending sign-off**: the intake and the saved draft are shown read-only. Add a note
-   and click **Request changes**. **Look for:** the case stays **Ended**; in the nurse's
-   room a **banner with the note** appears **immediately** and the button becomes **Save
-   revision**; their **My consultations** list shows "Changes requested — revise the
-   summary"; the worklist marks the case **Returned to drafter** (ADR-0024/0025/0027).
-   The nurse edits — nothing reaches the doctor until they click **Save revision**, at
-   which point the doctor's open copy updates live ("the drafter saved a revision").
-   The note is in-app only, never written to the audit log.
+   **without a refresh** (ADR-0018/0022).
+5. **Doctor — review.** As `doctor@vcp.local`, open the case from **Pending
+   sign-off**: the intake and the saved draft are shown read-only. In the nurse's
+   window, edit the draft — nothing reaches the doctor until the nurse clicks **Save
+   draft**, at which point the doctor's open copy updates live ("the drafter saved a
+   revision") (ADR-0021/0022).
 6. **Doctor — finalize.** **Finalize & sign off**, then confirm (→ Summarized). **Look
-   for:** finalize is **doctor-only** and the summary becomes **immutable**; on the
-   summary page a clinician can only **add an addendum**, which is appended and shown
-   to the patient. The **finalizing doctor can still read** the summary they signed,
-   even on a nurse-run case (ADR-0023): on **Pending sign-off**, switch to
-   **Completed** — the case is kept there with a **View summary** link (ADR-0029).
+   for:** finalize is **doctor-only** and the summary becomes **immutable** — it can no
+   longer be edited by anyone. The **finalizing doctor can still read** the summary they signed,
+   even on a nurse-run case (ADR-0020): on **Pending sign-off**, switch to
+   **Completed** — the case is kept there with a **View summary** link (ADR-0023).
 7. **Patient** — **look for** a "summary is ready" toast; open **View summary** to read
-   the finalized summary and its addenda (and **Print** it).
+   the finalized summary (and **Print** it).
 8. **Session expiry** — JWTs are short-lived (`JWT_EXPIRES_IN`, 15 min locally). When
    one expires, the next action returns the user to the login screen with "Your
    session has ended" instead of leaving a signed-in page that silently fails.
@@ -130,11 +122,11 @@ The guarantee lives in the **database**, not the UI (ADR-0003, invariant 2).
   simultaneous claims and asserting exactly one 200 and the rest 409:
 
   ```bash
-  docker compose up -d db redis
+  docker compose up -d db
   DATABASE_URL="postgresql://vcp:vcp_dev_password@localhost:5433/vcp_test?schema=public" \
     npx prisma migrate deploy --schema backend/src/prisma/schema.prisma
   DATABASE_URL="postgresql://vcp:vcp_dev_password@localhost:5433/vcp_test?schema=public" \
-    REDIS_URL="redis://localhost:6379" CLAIM_TTL_SWEEP_INTERVAL_SECONDS=3600 LOG_PRETTY=false \
+    CLAIM_TTL_SWEEP_INTERVAL_SECONDS=3600 LOG_PRETTY=false \
     npm run test:e2e --workspace backend
   ```
 
@@ -148,19 +140,20 @@ The guarantee lives in the **database**, not the UI (ADR-0003, invariant 2).
   log** and the nav bar offers exactly two destinations — **Users** (`/users`) and **Audit
   log** (`/audit`). On **Users**, every account is listed with its role and status, and the
   admin can **deactivate / reactivate** others (but not themselves). There is **no way to
-  open a consultation room, messages, attachments or summary** — the admin is refused
+  open a consultation room, messages or summary** — the admin is refused
   clinical content everywhere (invariant 3, SC-6). This is enforced server-side: even
   calling the clinical API directly as an admin returns 403.
 - **Audit trail** — in `/audit`, filter by event, actor, consultation and date range
   (click an actor or consultation in a row to filter by it); older events are paged.
-  **Look for:** every state change, claim, finalize and attachment access is recorded as
+  **Look for:** every state change, claim, message and finalize is recorded as
   **who / what / when** — actors shown by email, details as readable key/value pairs —
-  and **never** a message body, attachment content or summary text. Each row's
+  and **never** a message body or summary text. Each row's
   **Trace id** (its `correlationId`, full value on hover) ties it back to the request
   that caused it.
 - **Deactivation** — on **Users**, search/filter accounts and **Deactivate** a
-  clinician. **Look for:** a confirmation explaining that their claimed cases return to
-  the queue (ADR-0012).
+  clinician. **Look for:** a confirmation that explains the rule; try it on the nurse
+  while their session from step 3 is still running — it is refused ("try again after
+  it ends"), and works once the session has ended (ADR-0010).
 - **Role/state gating** — try an action out of turn (e.g. a nurse finalizing, or acting
   on a case they don't own). **Look for:** a role violation is **403**, an action
   illegal from the current state is **409** — both from the single authorization matrix.
@@ -190,7 +183,7 @@ The guarantee lives in the **database**, not the UI (ADR-0003, invariant 2).
 ## 5. Observability (optional, for the ops story)
 
 ```bash
-curl -s http://localhost:3100/ready | jq      # postgres gates; redis reported, non-gating
+curl -s http://localhost:3100/ready | jq      # gated on postgres
 curl -s http://localhost:3100/metrics | grep vcp_   # vcp_queue_depth, vcp_active_consultations
 ```
 

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ApiError, api, attachmentHref, getToken, setToken, setUnauthorizedHandler } from './api';
+import { ApiError, api, getToken, setToken, setUnauthorizedHandler } from './api';
 
 function jsonResponse(body: unknown, init: Partial<Response> = {}): Response {
   return {
@@ -122,24 +122,6 @@ describe('api client', () => {
     setUnauthorizedHandler(null);
   });
 
-  it('uploads an attachment as multipart without forcing a JSON content type', async () => {
-    setToken('tok');
-    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue(jsonResponse({ id: 'a-1' }));
-    const file = new File(['x'], 'scan.pdf', { type: 'application/pdf' });
-    await api.uploadAttachment('c-1', file);
-    const [url, init] = (fetch as ReturnType<typeof vi.fn>).mock.calls[0];
-    expect(url).toBe('http://localhost:3000/consultations/c-1/attachments');
-    expect(init.body).toBeInstanceOf(FormData);
-    expect(init.headers['Content-Type']).toBeUndefined();
-    expect(init.headers.Authorization).toBe('Bearer tok');
-  });
-
-  it('builds an absolute attachment download URL from the signed path', () => {
-    expect(attachmentHref({ downloadUrl: '/attachments/a-1/download?token=t' })).toBe(
-      'http://localhost:3000/attachments/a-1/download?token=t',
-    );
-  });
-
   it('exposes ApiError as an Error subclass', () => {
     const err = new ApiError(418, 'teapot');
     expect(err).toBeInstanceOf(Error);
@@ -168,26 +150,7 @@ describe('api client', () => {
       'POST',
       '/consultations/c-1/summary/finalize',
     ],
-    [
-      'requestSummaryChanges',
-      () => api.requestSummaryChanges('c-1', 'note'),
-      'POST',
-      '/consultations/c-1/summary/request-changes',
-    ],
     ['getSummary', () => api.getSummary('c-1'), 'GET', '/consultations/c-1/summary'],
-    [
-      'addAddendum',
-      () => api.addAddendum('c-1', 'x'),
-      'POST',
-      '/consultations/c-1/summary/addendum',
-    ],
-    ['getAttachments', () => api.getAttachments('c-1'), 'GET', '/consultations/c-1/attachments'],
-    [
-      'deleteAttachment',
-      () => api.deleteAttachment('c-1', 'a-1'),
-      'DELETE',
-      '/consultations/c-1/attachments/a-1',
-    ],
     ['getSignedOff', () => api.getSignedOff(), 'GET', '/consultations/signed-off'],
     ['getAudit', () => api.getAudit(), 'GET', '/audit'],
     ['getUsers', () => api.getUsers(), 'GET', '/users'],
@@ -200,14 +163,5 @@ describe('api client', () => {
     expect(url).toBe(`http://localhost:3000${path}`);
     // GET wrappers pass no explicit method (fetch defaults to GET).
     expect(init.method ?? 'GET').toBe(method);
-  });
-
-  it('requestSummaryChanges sends the note when given, and an empty body when not', async () => {
-    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue(jsonResponse({}));
-    await api.requestSummaryChanges('c-1', 'Add the BP reading');
-    await api.requestSummaryChanges('c-1');
-    const calls = (fetch as ReturnType<typeof vi.fn>).mock.calls;
-    expect(JSON.parse(calls[0][1].body)).toEqual({ note: 'Add the BP reading' });
-    expect(JSON.parse(calls[1][1].body)).toEqual({});
   });
 });

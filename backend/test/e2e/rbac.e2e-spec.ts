@@ -114,20 +114,11 @@ describe('RBAC & separation of duties (e2e)', () => {
         .set('Authorization', bearer(adminToken))
         .expect(403));
 
-    it('is denied the attachments list (SC-8)', () =>
+    it('is denied sending a message into the room', () =>
       request(server)
-        .get(`/consultations/${consultationId}/attachments`)
+        .post(`/consultations/${consultationId}/messages`)
         .set('Authorization', bearer(adminToken))
-        .expect(403));
-
-    it('is denied uploading an attachment', () =>
-      request(server)
-        .post(`/consultations/${consultationId}/attachments`)
-        .set('Authorization', bearer(adminToken))
-        .attach('file', Buffer.from([0xff, 0xd8, 0xff, 0x00]), {
-          filename: 'x.jpg',
-          contentType: 'image/jpeg',
-        })
+        .send({ body: 'hello' })
         .expect(403));
 
     it('can read the audit log (its one legitimate view)', () =>
@@ -176,19 +167,16 @@ describe('RBAC & separation of duties (e2e)', () => {
         .expect(403);
     });
 
-    it("another patient cannot upload an attachment to patient A's consultation", () =>
+    it("another patient cannot send a message into patient A's consultation", () =>
       request(server)
-        .post(`/consultations/${consultationId}/attachments`)
+        .post(`/consultations/${consultationId}/messages`)
         .set('Authorization', bearer(patientBToken))
-        .attach('file', Buffer.from([0xff, 0xd8, 0xff, 0x00]), {
-          filename: 'x.jpg',
-          contentType: 'image/jpeg',
-        })
+        .send({ body: 'hello' })
         .expect(403));
 
-    it('a non-assigned clinician cannot list the attachments', () =>
+    it('a non-assigned clinician cannot read the messages', () =>
       request(server)
-        .get(`/consultations/${consultationId}/attachments`)
+        .get(`/consultations/${consultationId}/messages`)
         .set('Authorization', bearer(otherNurseToken))
         .expect(403));
 

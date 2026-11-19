@@ -1,38 +1,26 @@
 import { Injectable } from '@nestjs/common';
 import { ConsultationState } from '@prisma/client';
-import { collectDefaultMetrics, Gauge, Histogram, Registry } from 'prom-client';
+import { collectDefaultMetrics, Gauge, Registry } from 'prom-client';
 import { PrismaService } from '../../prisma/prisma.service';
 
 /**
- * Owns the Prometheus registry and the platform's metrics (ADR-0014). Two kinds:
+ * Owns the Prometheus registry and the platform's metrics (ADR-0012):
  *
- * - **Request metrics** — `http_request_duration_seconds` (a histogram whose
- *   `_count` also gives request counts), labelled by method, route and status.
- *   Fed by {@link MetricsInterceptor}.
+ * - **Default process metrics** — memory, CPU, event-loop lag (prom-client).
  * - **Domain metrics** — `vcp_queue_depth` (QUEUED consultations) and
  *   `vcp_active_consultations` (IN_SESSION), read from PostgreSQL — the system of
  *   record (ADR-0002) — on each scrape via an async `collect` callback, so the
  *   numbers are always the authoritative counts and need no event bookkeeping.
  *
- * Every series is an aggregate count/timing — who/what/when, never PII or
- * clinical content (NFR-2).
+ * Every series is an aggregate count — never PII or clinical content (NFR-2).
  */
 @Injectable()
 export class MetricsService {
   readonly registry = new Registry();
-  private readonly httpDuration: Histogram<'method' | 'route' | 'status'>;
 
   constructor(private readonly prisma: PrismaService) {
     this.registry.setDefaultLabels({ app: 'vcp-backend' });
     collectDefaultMetrics({ register: this.registry });
-
-    this.httpDuration = new Histogram({
-      name: 'http_request_duration_seconds',
-      help: 'HTTP request duration in seconds',
-      labelNames: ['method', 'route', 'status'],
-      buckets: [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5],
-      registers: [this.registry],
-    });
 
     // `collect` runs on each scrape with the Gauge as `this`; the arrow closure
     // captures the service so it can query PostgreSQL for the authoritative count.
@@ -55,12 +43,6 @@ export class MetricsService {
         this.set(await countByState(ConsultationState.IN_SESSION));
       },
     });
-  }
-
-  /** Observe one completed HTTP request. `route` is the matched template, never a
-   * concrete path with IDs, so label cardinality stays bounded and no ID leaks. */
-  observeHttp(method: string, route: string, status: number, durationSeconds: number): void {
-    this.httpDuration.observe({ method, route, status: String(status) }, durationSeconds);
   }
 
   /** The full Prometheus exposition text (awaits the async domain collectors). */

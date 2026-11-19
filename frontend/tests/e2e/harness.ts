@@ -84,9 +84,6 @@ const SUMMARY = {
   finalizedBy: 'u-doctor',
   finalizedAt: '2026-10-22T09:10:00.000Z',
   finalized: true,
-  changesRequestedAt: null,
-  changesRequestedNote: null,
-  addenda: [],
 };
 
 function json(route: Route, bodyObj: unknown): Promise<void> {
@@ -113,9 +110,6 @@ async function stubBackend(page: Page): Promise<void> {
   );
   await page.route(/localhost:3000\/consultations\/[^/]+\/summary$/, (route) =>
     json(route, SUMMARY),
-  );
-  await page.route(/localhost:3000\/consultations\/[^/]+\/attachments$/, (route) =>
-    json(route, []),
   );
   await page.route(`${API}/consultations/queue`, (route) => json(route, QUEUE));
   await page.route(`${API}/consultations/mine`, (route) => json(route, []));

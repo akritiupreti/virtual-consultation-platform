@@ -4,23 +4,17 @@ import { UsersService } from '../src/users/users.service';
 
 /**
  * Unit coverage for admin user management guards not fully exercised end-to-end
- * (FR-14, FR-23/25, ADR-0012): self-deactivation, double-deactivate/activate,
- * 404s, and clinician reassignment on deactivation.
+ * (FR-14, FR-23/24/25, ADR-0010): self-deactivation, double-deactivate/activate,
+ * 404s, and the "not during an active session" rule.
  */
 function makeDeps() {
   const prisma = {
-    user: { findMany: jest.fn(), findUnique: jest.fn(), update: jest.fn() },
+    user: { findMany: jest.fn(), findUnique: jest.fn(), update: jest.fn(), updateMany: jest.fn() },
   };
   const audit = { record: jest.fn().mockResolvedValue(undefined) };
-  const consultations = { reassignActiveCasesOf: jest.fn().mockResolvedValue(['c-1']) };
   const realtime = { disconnectUser: jest.fn() };
-  const service = new UsersService(
-    prisma as never,
-    audit as never,
-    consultations as never,
-    realtime as never,
-  );
-  return { service, prisma, audit, consultations, realtime };
+  const service = new UsersService(prisma as never, audit as never, realtime as never);
+  return { service, prisma, audit, realtime };
 }
 
 const admin = { id: 'admin', role: Role.ADMIN };
@@ -59,23 +53,35 @@ describe('UsersService (unit)', () => {
     await expect(service.deactivate(admin, 'u')).rejects.toBeInstanceOf(ConflictException);
   });
 
-  it('deactivates a clinician, reassigns their cases and drops sockets', async () => {
-    const { service, prisma, consultations, realtime } = makeDeps();
+  it('deactivates a user who is not in a session, audits it and drops sockets', async () => {
+    const { service, prisma, audit, realtime } = makeDeps();
     prisma.user.findUnique.mockResolvedValue(userRow({ role: Role.DOCTOR }));
-    prisma.user.update.mockResolvedValue(userRow({ status: UserStatus.DEACTIVATED }));
+    prisma.user.updateMany.mockResolvedValue({ count: 1 });
     const result = await service.deactivate(admin, 'u');
-    expect(consultations.reassignActiveCasesOf).toHaveBeenCalledWith('u', 'clinician_deactivated');
+    // The guard is part of the UPDATE itself: no IN_SESSION case on either side.
+    expect(prisma.user.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          id: 'u',
+          consultationsAsPatient: { none: { state: 'IN_SESSION' } },
+          consultationsClaimed: { none: { state: 'IN_SESSION' } },
+        }),
+      }),
+    );
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({ eventType: 'USER_DEACTIVATED' }),
+    );
     expect(realtime.disconnectUser).toHaveBeenCalledWith('u');
-    expect(result.reassignedConsultationIds).toEqual(['c-1']);
+    expect(result.status).toBe(UserStatus.DEACTIVATED);
   });
 
-  it('does not reassign cases for a non-clinician', async () => {
-    const { service, prisma, consultations } = makeDeps();
-    prisma.user.findUnique.mockResolvedValue(userRow({ role: Role.PATIENT }));
-    prisma.user.update.mockResolvedValue(userRow({ status: UserStatus.DEACTIVATED }));
-    const result = await service.deactivate(admin, 'u');
-    expect(consultations.reassignActiveCasesOf).not.toHaveBeenCalled();
-    expect(result.reassignedConsultationIds).toEqual([]);
+  it('refuses to deactivate a user who is in an active session (409)', async () => {
+    const { service, prisma, audit, realtime } = makeDeps();
+    prisma.user.findUnique.mockResolvedValue(userRow({ role: Role.NURSE }));
+    prisma.user.updateMany.mockResolvedValue({ count: 0 });
+    await expect(service.deactivate(admin, 'u')).rejects.toBeInstanceOf(ConflictException);
+    expect(audit.record).not.toHaveBeenCalled();
+    expect(realtime.disconnectUser).not.toHaveBeenCalled();
   });
 
   it('refuses to reactivate an already-active user', async () => {

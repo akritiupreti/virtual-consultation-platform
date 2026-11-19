@@ -42,7 +42,7 @@ jobs:
         run: npm run typecheck
 
       # Backend unit tests for fast signal (the gated coverage number is the
-      # merged unit + e2e total, enforced in the `integration` job — ADR-0016).
+      # merged unit + e2e total, enforced in the `integration` job — ADR-0014).
       - name: Test backend (unit)
         run: npm run test --workspace backend
 
@@ -78,20 +78,9 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
-      # Redis so the socket.io Redis adapter path is exercised in CI (ADR-0004/0009).
-      redis:
-        image: redis:7-alpine
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
 
     env:
       DATABASE_URL: postgresql://vcp:vcp_dev_password@localhost:5432/vcp_test?schema=public
-      REDIS_URL: redis://localhost:6379
       JWT_SECRET: ci-only-test-secret
       JWT_EXPIRES_IN: 15m
       # Drive the claim-TTL sweeper deterministically from the tests; keep the
@@ -121,7 +110,7 @@ jobs:
       # Runs the unit + e2e suites with coverage, merges them, and ENFORCES the
       # gate: statements/lines/functions ≥90% (NFR-7 / SC-10), branches ≥65%.
       # The merged total is the honest coverage number because the core
-      # guarantees are proven against real Postgres/Redis, not mocks (ADR-0016).
+      # guarantees are proven against a real Postgres, not mocks (ADR-0014).
       - name: Test (unit + e2e) — merged coverage GATE ≥90%
         run: npm run coverage:combined --workspace backend
 
@@ -133,7 +122,7 @@ jobs:
           path: backend/coverage
           if-no-files-found: ignore
 
-  # Proves the full stack containerises and builds (SC-14 / ADR-0008). Images are
+  # Proves the full stack containerises and builds (SC-14 / ADR-0006). Images are
   # built but NOT pushed — the capstone deploys to local Docker Compose only, so
   # there is no registry and no deploy stage (and thus no registry secrets).
   docker:
@@ -168,10 +157,10 @@ jobs:
           cache-to: type=gha,mode=max
 
   # Accessibility (WCAG 2.1 AA) + visual regression on the four critical screens
-  # (C24 / C25 / SC-13 / ADR-0017 / ADR-0018). Runs INSIDE the pinned Playwright
+  # (C24 / C25 / SC-13 / ADR-0015 / ADR-0016). Runs INSIDE the pinned Playwright
   # container so the browser, fonts and anti-aliasing match the committed
   # snapshot baselines exactly — the cross-platform snapshot footgun. The app is
-  # served as a static build with the backend stubbed, so no Postgres/Redis.
+  # served as a static build with the backend stubbed, so no Postgres.
   accessibility-visual:
     name: a11y · visual regression (critical screens)
     runs-on: ubuntu-latest

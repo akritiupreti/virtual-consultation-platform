@@ -8,7 +8,7 @@ import { createTestApp, createUser, login, resetDb } from './helpers';
 /**
  * FR-15: the admin audit view is filterable (actor, event type, consultation, time
  * range) and paginated, and it never exposes clinical content (invariant 3; SC-6):
- * no message body, attachment bytes, or summary text ever appears in a record.
+ * no message body or summary text ever appears in a record.
  */
 const SECRET_MESSAGE = 'PRIVATE patient said the pain is sharp';
 const SECRET_SUMMARY = 'CLINICAL assessment: query appendicitis';

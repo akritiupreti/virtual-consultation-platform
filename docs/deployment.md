@@ -1,12 +1,12 @@
 # Deployment
 
 How the whole system is built, assembled and shipped. The deployment target is
-**local Docker Compose** ([ADR-0008](adr/0008-deployment-target.md)) — one command
+**local Docker Compose** ([ADR-0006](adr/0006-deployment-target.md)) — one command
 brings the entire stack up (SC-14, NFR-8); no hosted environment is in scope.
 **Diagram-first:** each section opens with the picture. Delivered in Phase 5.
 
 Related: [architecture](architecture.md) · [observability](observability.md) ·
-[testing strategy](testing-strategy.md) · [ADR-0004 Redis](adr/0004-redis-responsibilities.md).
+[testing strategy](testing-strategy.md).
 
 ---
 
@@ -22,37 +22,31 @@ flowchart TB
             fe["frontend<br/>nginx static · :80<br/>serves built React app"]
             be["backend<br/>NestJS · :3000<br/>REST + WebSocket"]
             db[("db<br/>postgres:16-alpine · :5432<br/>system of record")]
-            rd[("redis:7-alpine · :6379<br/>presence · pub/sub · cache")]
         end
         dbvol[(vcp-db-data)]
-        atvol[(vcp-attachments)]
     end
 
     browser -->|"http://localhost:$FRONTEND_PORT"| fe
     browser -->|"http://localhost:$BACKEND_PORT (REST + WSS)"| be
     be -->|"db:5432"| db
-    be -->|"redis:6379 (degrades if down)"| rd
     db --- dbvol
-    be --- atvol
 
     classDef store fill:#eef;
-    class db,rd,dbvol,atvol store;
+    class db,dbvol store;
 ```
 
-Four services behind a single `docker compose up`:
+Three services behind a single `docker compose up`:
 
 - **frontend** — the React app built by Vite and served as static files by nginx,
   with SPA fallback so deep links work. `VITE_API_URL` is baked in **at build time**
   and must be **browser-reachable**, so it points at the backend's _host-published_
   address (`http://localhost:$BACKEND_PORT`), **not** the internal `backend` DNS name
   the browser can't resolve.
-- **backend** — the NestJS API + WebSocket gateway. It reaches `db` and `redis` by
-  their **internal Compose DNS names** (`db:5432`, `redis:6379`), independent of the
-  host-port overrides a developer uses locally.
-- **db / redis** — Postgres (durable, backed by the `vcp-db-data` volume) and Redis
-  (ephemeral; the app degrades gracefully if it's down, [ADR-0004](adr/0004-redis-responsibilities.md)).
-- **vcp-attachments** volume — persists the local attachment object store
-  ([ADR-0007](adr/0007-attachment-storage.md)) across restarts.
+- **backend** — the NestJS API + WebSocket gateway. It reaches `db` by its
+  **internal Compose DNS name** (`db:5432`), independent of the host-port overrides
+  a developer uses locally.
+- **db** — Postgres, the system of record, backed by the `vcp-db-data` volume so
+  data survives restarts.
 
 ### Host-port mapping (why the indirection)
 
@@ -65,7 +59,6 @@ are configurable, so the stack coexists with whatever else is running locally
 | frontend | 80       | `FRONTEND_PORT` (8088) |
 | backend  | 3000     | `BACKEND_PORT` (3100)  |
 | db       | 5432     | `POSTGRES_PORT` (5432) |
-| redis    | 6379     | `REDIS_PORT` (6379)    |
 
 ---
 
@@ -77,15 +70,15 @@ flowchart LR
     ex[".env.example (committed, canonical list)"]
     ex -. copy & adjust .-> env
 
-    env -->|secrets & tunables<br/>JWT · attachments · throttle · TTL · log| be[backend container]
+    env -->|secrets & tunables<br/>JWT · throttle · TTL · log| be[backend container]
     env -->|POSTGRES_* · ports| compose[docker-compose.yml]
-    compose -->|"override: DATABASE_URL=db:5432<br/>REDIS_URL=redis:6379<br/>CORS_ORIGIN · PORT · storage dir"| be
+    compose -->|"override: DATABASE_URL=db:5432<br/>CORS_ORIGIN · PORT"| be
 ```
 
 One git-ignored root `.env` feeds both Compose and the app (`.env.example` is the
 committed canonical list). For the **backend container**, secrets and tunables load
-from `.env` via `env_file`, while the **connection strings, ports, CORS origin and
-attachment path are pinned in `docker-compose.yml`** (these override `env_file`), so
+from `.env` via `env_file`, while the **connection string, port and CORS origin are
+pinned in `docker-compose.yml`** (these override `env_file`), so
 the container always talks to the internal network regardless of a developer's local
 host-port overrides. This keeps the single-`.env` convention intact while making the
 containers correct.
@@ -117,10 +110,10 @@ monorepo's single `package-lock.json` lives there.
 
 On start, the entrypoint runs **`prisma migrate deploy`** against `db` — which only
 _applies_ already-generated migrations and never prompts or alters the schema — then
-starts the API. The backend waits for `db` and `redis` to be **healthy**
+starts the API. The backend waits for `db` to be **healthy**
 (`depends_on: condition: service_healthy`) before it starts.
 
-> **Future work (not built — ADR-0008 scope):** image-size optimisation (prune dev
+> **Future work (not built — ADR-0006 scope):** image-size optimisation (prune dev
 > deps from the runtime layer), TLS termination, managed secrets, and horizontal
 > scaling. These are production concerns documented as out-of-scope for the capstone.
 
@@ -139,7 +132,7 @@ flowchart TB
 
     subgraph integration [job: integration · e2e]
         direction LR
-        i1["postgres:16 + redis:7<br/>service containers"] --> i2[migrate deploy] --> i3["unit + e2e coverage"] --> i4["nyc merge + check<br/>GATE ≥90%"]
+        i1["postgres:16<br/>service container"] --> i2[migrate deploy] --> i3["unit + e2e coverage"] --> i4["nyc merge + check<br/>GATE ≥90%"]
     end
 
     subgraph a11y [job: accessibility-visual · Playwright container]
@@ -171,19 +164,19 @@ Four jobs run on every PR and on `main` (`.github/workflows/ci.yml`):
 - **verify** — `npm ci` → Prisma generate/validate → lint → typecheck → backend unit
   tests → **frontend coverage (GATE ≥80%)**. As of **Phase 6** the frontend Vitest
   gate is enforced (NFR-7, SC-11); a drop below threshold fails the job.
-- **integration** — boots the app against a **real** `postgres:16` and `redis:7`
-  (service containers), applies migrations, and runs the **unit + e2e suites with
+- **integration** — boots the app against a **real** `postgres:16` (service
+  container), applies migrations, and runs the **unit + e2e suites with
   coverage**, then **merges** them and runs `nyc check-coverage` — the backend coverage
   **GATE ≥90%** (statements/lines/functions). The merged total is the honest number
   because the DB-atomic and cross-role guarantees are proven against the real DB, not
-  mocks ([ADR-0016](adr/0016-coverage-gate-strategy.md)).
+  mocks ([ADR-0014](adr/0014-coverage-gate-strategy.md)).
 - **accessibility-visual** — runs inside the pinned Playwright container (so fonts and
   anti-aliasing match the committed snapshots), serving a static build with the backend
   stubbed, then runs **axe WCAG 2.1 AA** (incl. contrast) and **visual-regression** on
-  the four critical screens (ADR-0017/0018).
+  the four critical screens (ADR-0015/0016).
 - **docker image build** — builds the backend and frontend images with Buildx to
   prove the stack containerises (SC-14). Images are **built but not pushed**: the
-  target is local Compose (ADR-0008), so there is **no registry, no deploy stage,
+  target is local Compose (ADR-0006), so there is **no registry, no deploy stage,
   and no registry secrets**. A real hosted deploy would be an additive ADR.
 
 Phase 5's coverage was observe-only; **Phase 6 turns the gates on** (green nodes above)
@@ -200,7 +193,7 @@ docker compose up -d --build
 
 # Health / readiness / metrics (host ports from .env; defaults shown)
 curl -s http://localhost:3100/health      # liveness  → {"status":"ok",...}
-curl -s http://localhost:3100/ready       # readiness → postgres gates, redis non-gating
+curl -s http://localhost:3100/ready       # readiness → gated on postgres
 curl -s http://localhost:3100/metrics     # Prometheus metrics
 
 # Frontend
@@ -218,15 +211,15 @@ docker compose down -v
 ```
 
 If a host port is already in use, override `BACKEND_PORT` / `FRONTEND_PORT` /
-`POSTGRES_PORT` / `REDIS_PORT` in `.env` (see `.env.example`).
+`POSTGRES_PORT` in `.env` (see `.env.example`).
 
 ---
 
 ## 6. Environments
 
-| Environment | DB                                              | Redis                      | Notes                                                    |
-| ----------- | ----------------------------------------------- | -------------------------- | -------------------------------------------------------- |
-| Local dev   | Compose `db` (or host API against it)           | Compose `redis` (optional) | Fast reload; API may run on the host                     |
-| e2e / CI    | `postgres:16` + `redis:7`                       | required in CI             | Dedicated `*_test` DB; safety guard refuses non-test DBs |
-| Full stack  | Compose `db` + `redis` + `backend` + `frontend` | included                   | `docker compose up` — the SC-14 target                   |
-| Hosted      | —                                               | —                          | **Out of scope** (ADR-0008); additive ADR if ever wanted |
+| Environment | DB                                    | Notes                                                    |
+| ----------- | ------------------------------------- | -------------------------------------------------------- |
+| Local dev   | Compose `db` (or host API against it) | Fast reload; API may run on the host                     |
+| e2e / CI    | `postgres:16`                         | Dedicated `*_test` DB; safety guard refuses non-test DBs |
+| Full stack  | Compose `db` + `backend` + `frontend` | `docker compose up` — the SC-14 target                   |
+| Hosted      | —                                     | **Out of scope** (ADR-0006); additive ADR if ever wanted |

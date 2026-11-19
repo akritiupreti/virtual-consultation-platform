@@ -1,34 +1,15 @@
-import {
-  ChangeEvent,
-  FormEvent,
-  JSX,
-  MouseEvent,
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-} from 'react';
+import { FormEvent, JSX, useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import BackButton from '../components/BackButton';
 import { PriorityBadge, StateBadge } from '../components/Badges';
 import ConfirmPanel from '../components/ConfirmPanel';
 import StatusStepper from '../components/StatusStepper';
-import {
-  ApiError,
-  api,
-  Attachment,
-  attachmentHref,
-  ConsultationDetail,
-  ConsultationState,
-  Message,
-} from '../lib/api';
+import { ApiError, api, ConsultationDetail, ConsultationState, Message } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { useNotify } from '../lib/notifications';
-import { formatBytes, formatDateTime, formatTime, humanize, severityLabel } from '../lib/format';
+import { formatDateTime, formatTime, humanize, severityLabel } from '../lib/format';
 import { useDocumentTitle, useUnsavedChangesWarning } from '../lib/hooks';
-import { PresenceParticipant, useConsultationRoom, useSummaryUpdates } from '../lib/realtime';
-
-const ACCEPTED_FILES = '.jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf';
+import { useConsultationRoom, useSummaryUpdates } from '../lib/realtime';
 
 /** What the patient should know at each point of the consultation. */
 const PATIENT_GUIDANCE: Partial<Record<ConsultationState, string>> = {
@@ -50,8 +31,6 @@ export default function ConsultationRoom(): JSX.Element {
 
   const [detail, setDetail] = useState<ConsultationDetail | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
-  const [attachments, setAttachments] = useState<Attachment[]>([]);
-  const [presence, setPresence] = useState<PresenceParticipant[]>([]);
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -63,25 +42,16 @@ export default function ConsultationRoom(): JSX.Element {
 
   // ── Summary draft ─────────────────────────────────────────────────────────
   // The editor text, and the last version the server holds. The difference is
-  // "unsaved changes": saving is an explicit action (ADR-0026), so a half-written
-  // revision never reaches a reviewing doctor or clears their change request.
+  // "unsaved changes": saving is an explicit action (ADR-0021), so a half-written
+  // revision never reaches a reviewing doctor.
   const [draft, setDraft] = useState('');
   const [savedDraft, setSavedDraft] = useState('');
   const [hasSummary, setHasSummary] = useState(false);
   const [saveState, setSaveState] = useState<SaveState>('idle');
   const [savedAt, setSavedAt] = useState<string | null>(null);
-  // A doctor's outstanding "please revise" request on this draft (ADR-0025).
-  const [requestedChange, setRequestedChange] = useState<{ note: string | null } | null>(null);
-  // Reviewer side: the optional note back to the drafter, and status notices.
-  const [changeNote, setChangeNote] = useState('');
+  // Reviewer side: tells a reviewing doctor the draft changed under them.
   const [reviewNotice, setReviewNotice] = useState<string | null>(null);
 
-  const [uploading, setUploading] = useState(false);
-  const [uploadError, setUploadError] = useState<string | null>(null);
-  // The file the patient is confirming removal of (ADR-0028), and its in-flight state.
-  const [removingId, setRemovingId] = useState<string | null>(null);
-  const [removeBusy, setRemoveBusy] = useState(false);
-  const fileInput = useRef<HTMLInputElement>(null);
   const messageList = useRef<HTMLDivElement>(null);
 
   const isClinician = user?.role === 'NURSE' || user?.role === 'DOCTOR';
@@ -125,14 +95,6 @@ export default function ConsultationRoom(): JSX.Element {
     }
   }, [id]);
 
-  const loadAttachments = useCallback(async () => {
-    try {
-      setAttachments(await api.getAttachments(id));
-    } catch {
-      /* participants only; keep the last view on a transient failure */
-    }
-  }, [id]);
-
   /**
    * Read the summary from the server. For the drafter, never replace text they
    * are still editing; for a reviewing doctor, always show the latest version and
@@ -144,7 +106,6 @@ export default function ConsultationRoom(): JSX.Element {
         const s = await api.getSummary(id);
         setHasSummary(true);
         setSavedDraft(s.content);
-        setRequestedChange(s.changesRequestedAt ? { note: s.changesRequestedNote } : null);
         if (!dirtyRef.current) {
           const current = draftRef.current.trim();
           if (live && current && current !== s.content.trim()) {
@@ -163,18 +124,17 @@ export default function ConsultationRoom(): JSX.Element {
     void loadDetail();
   }, [loadDetail]);
 
-  // Messages and attachments are the two participants' only (matrix). A doctor
+  // Messages are the two participants' only (matrix). A doctor
   // reviewing a case for sign-off sees the intake and the draft, not the chat.
   useEffect(() => {
     if (!isParticipant) {
       return;
     }
     void loadMessages();
-    void loadAttachments();
     // Slow fallback only; the socket delivers new messages immediately.
     const timer = setInterval(() => void loadMessages(), 15000);
     return () => clearInterval(timer);
-  }, [isParticipant, loadMessages, loadAttachments]);
+  }, [isParticipant, loadMessages]);
 
   useEffect(() => {
     if (isClinician) {
@@ -182,17 +142,15 @@ export default function ConsultationRoom(): JSX.Element {
     }
   }, [isClinician, loadSummary]);
 
-  // Live room: new messages, state changes, presence and attachments (ADR-0009).
+  // Live room: new messages and state changes (ADR-0007).
   useConsultationRoom(id, {
     onMessage: (m) =>
       setMessages((prev) => (prev.some((x) => x.id === m.id) ? prev : [...prev, m])),
     onConsultationUpdated: () => void loadDetail(),
-    onPresence: setPresence,
-    onAttachment: () => void loadAttachments(),
   });
 
-  // Live summary signals (ADR-0027): a drafter sees a change request arrive, and a
-  // reviewing doctor sees a revision arrive, without reloading the page.
+  // Live summary signals (ADR-0022): a reviewing doctor sees a revision arrive,
+  // and the case leaves their view once signed off, without reloading the page.
   useSummaryUpdates((payload) => {
     if (payload.consultationId !== id || !isClinician) {
       return;
@@ -225,7 +183,7 @@ export default function ConsultationRoom(): JSX.Element {
     }
   }
 
-  /** Persist the editor content. Saving also clears an outstanding change request. */
+  /** Persist the editor content. */
   async function saveDraft(): Promise<boolean> {
     const content = draft.trim();
     if (!content) {
@@ -238,7 +196,6 @@ export default function ConsultationRoom(): JSX.Element {
       setHasSummary(true);
       setSaveState('saved');
       setSavedAt(new Date().toISOString());
-      setRequestedChange(null);
       return true;
     } catch (err) {
       setSaveState('error');
@@ -260,7 +217,7 @@ export default function ConsultationRoom(): JSX.Element {
 
   // Finalize locks the summary. The assigned doctor's current text is saved first,
   // so the signed record is exactly what they see; a sign-off doctor who did not
-  // run the case finalizes the saved draft as-is (they may not re-draft — ADR-0020).
+  // run the case finalizes the saved draft as-is (they may not re-draft — ADR-0018).
   async function finalize(): Promise<void> {
     setConfirming(null);
     if (isAssignedClinician && dirty && !(await saveDraft())) {
@@ -273,21 +230,10 @@ export default function ConsultationRoom(): JSX.Element {
     if (isAssignedClinician) {
       await loadDetail();
     } else {
-      // A sign-off doctor's read access ends with the sign-off window (ADR-0023
+      // A sign-off doctor's read access ends with the sign-off window (ADR-0020
       // keeps the summary itself readable), so go back to the worklist.
       notify('Summary finalized and shared with the patient.', { tone: 'success' });
       navigate('/pending-signoff', { replace: true });
-    }
-  }
-
-  // Return the draft to its author to revise instead of signing it (ADR-0024).
-  async function requestChanges(): Promise<void> {
-    setReviewNotice(null);
-    const ok = await run(() => api.requestSummaryChanges(id, changeNote.trim() || undefined));
-    if (ok) {
-      setChangeNote('');
-      // The durable "returned" banner (loaded below) says what happened.
-      await loadSummary();
     }
   }
 
@@ -307,63 +253,6 @@ export default function ConsultationRoom(): JSX.Element {
       setError(err instanceof ApiError ? err.message : 'Failed to send');
     } finally {
       setSending(false);
-    }
-  }
-
-  async function upload(event: ChangeEvent<HTMLInputElement>): Promise<void> {
-    const file = event.target.files?.[0];
-    event.target.value = '';
-    if (!file) {
-      return;
-    }
-    setUploadError(null);
-    if (file.size > 10 * 1024 * 1024) {
-      setUploadError('That file is larger than 10 MB.');
-      return;
-    }
-    setUploading(true);
-    try {
-      await api.uploadAttachment(id, file);
-      await loadAttachments();
-    } catch (err) {
-      setUploadError(err instanceof ApiError ? err.message : 'Upload failed');
-    } finally {
-      setUploading(false);
-    }
-  }
-
-  // The patient takes back a file they shared by mistake — only during the session;
-  // after it ends the file is part of the record (ADR-0028).
-  async function removeAttachment(attachmentId: string): Promise<void> {
-    setUploadError(null);
-    setRemoveBusy(true);
-    try {
-      await api.deleteAttachment(id, attachmentId);
-      setRemovingId(null);
-      setAttachments((prev) => prev.filter((a) => a.id !== attachmentId));
-    } catch (err) {
-      setUploadError(err instanceof ApiError ? err.message : 'Could not remove the file');
-      await loadAttachments();
-    } finally {
-      setRemoveBusy(false);
-    }
-  }
-
-  // Signed links are short-lived; if one has expired, mint a fresh one first.
-  async function openAttachment(event: MouseEvent, a: Attachment): Promise<void> {
-    if (new Date(a.expiresAt).getTime() > Date.now() + 5000) {
-      return;
-    }
-    event.preventDefault();
-    try {
-      const fresh = await api.getAttachments(id);
-      setAttachments(fresh);
-      const match = fresh.find((x) => x.id === a.id);
-      if (match) {
-        window.open(attachmentHref(match), '_blank', 'noopener');
-      }
-    } catch {
-      setUploadError('Could not open the file. Try again.');
     }
   }
 
@@ -405,11 +294,10 @@ export default function ConsultationRoom(): JSX.Element {
 
   const inSession = detail.state === 'IN_SESSION';
   // Doctor sign-off becomes available once the session has ended (ENDED → SUMMARIZED),
-  // for any doctor — including one reviewing a case a nurse ran (ADR-0020).
+  // for any doctor — including one reviewing a case a nurse ran (ADR-0018).
   const canFinalize = isDoctor && detail.state === 'ENDED' && !detail.summaryFinalized;
   const reviewingForSignoff = canFinalize && !isAssignedClinician;
   const patientGuidance = user?.role === 'PATIENT' ? PATIENT_GUIDANCE[detail.state] : undefined;
-  const otherParty = presence.find((p) => p.userId !== user?.id);
 
   return (
     <>
@@ -425,16 +313,6 @@ export default function ConsultationRoom(): JSX.Element {
             <PriorityBadge priority={detail.priority} />
             <StateBadge state={detail.state} />
             <span className="muted">Requested {formatDateTime(detail.createdAt)}</span>
-            {isParticipant && otherParty && (
-              <span className="presence">
-                <span
-                  className={`presence-dot${otherParty.online ? ' is-online' : ''}`}
-                  aria-hidden="true"
-                />
-                {otherParty.userId === detail.patientId ? 'Patient' : 'Clinician'}{' '}
-                {otherParty.online ? 'online' : 'offline'}
-              </span>
-            )}
           </div>
         </div>
         {isAssignedClinician && (
@@ -496,7 +374,7 @@ export default function ConsultationRoom(): JSX.Element {
           onCancel={() => setConfirming(null)}
         >
           <p>
-            Ending closes messaging and file sharing for both of you.
+            Ending closes messaging for both of you.
             {dirty && ' Your unsaved summary draft will be saved first.'}
             {!isDoctor && ' A doctor signs off the summary afterwards.'}
           </p>
@@ -557,96 +435,6 @@ export default function ConsultationRoom(): JSX.Element {
                 </button>
               </form>
             </section>
-
-            <section className="card" aria-labelledby="files-heading">
-              <div className="card-header">
-                <h2 id="files-heading">Files</h2>
-                {inSession && (
-                  <>
-                    <input
-                      ref={fileInput}
-                      id="attachment-input"
-                      type="file"
-                      accept={ACCEPTED_FILES}
-                      className="sr-only"
-                      onChange={(e) => void upload(e)}
-                      tabIndex={-1}
-                      aria-hidden="true"
-                    />
-                    <button
-                      type="button"
-                      className="secondary btn-sm"
-                      disabled={uploading}
-                      onClick={() => fileInput.current?.click()}
-                    >
-                      {uploading ? 'Uploading…' : 'Attach a file'}
-                    </button>
-                  </>
-                )}
-              </div>
-              {uploadError && (
-                <p className="error" role="alert">
-                  {uploadError}
-                </p>
-              )}
-              {attachments.length === 0 ? (
-                <p className="muted empty">
-                  {inSession
-                    ? 'No files shared yet. JPEG, PNG or PDF, up to 10 MB.'
-                    : 'No files were shared.'}
-                </p>
-              ) : (
-                <ul className="file-list">
-                  {attachments.map((a) => {
-                    const canRemove =
-                      inSession && user?.role === 'PATIENT' && a.uploadedBy === user.id;
-                    return (
-                      <li key={a.id}>
-                        <div className="file-row">
-                          <a
-                            href={attachmentHref(a)}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            onClick={(e) => void openAttachment(e, a)}
-                          >
-                            {a.filename}
-                          </a>
-                          <span className="muted">
-                            {formatBytes(a.sizeBytes)} · {senderLabel(a.uploadedBy)} ·{' '}
-                            {formatTime(a.createdAt)}
-                          </span>
-                          {canRemove && removingId !== a.id && (
-                            <button
-                              type="button"
-                              className="link-btn danger-text btn-sm"
-                              aria-label={`Remove ${a.filename}`}
-                              onClick={() => setRemovingId(a.id)}
-                            >
-                              Remove
-                            </button>
-                          )}
-                        </div>
-                        {canRemove && removingId === a.id && (
-                          <ConfirmPanel
-                            label={`Confirm remove ${a.filename}`}
-                            confirmLabel="Remove file"
-                            danger
-                            busy={removeBusy}
-                            onConfirm={() => void removeAttachment(a.id)}
-                            onCancel={() => setRemovingId(null)}
-                          >
-                            <p>
-                              Remove <strong>{a.filename}</strong>? The clinician will no longer see
-                              it. Files can only be removed during the session.
-                            </p>
-                          </ConfirmPanel>
-                        )}
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </section>
           </div>
         )}
 
@@ -673,18 +461,7 @@ export default function ConsultationRoom(): JSX.Element {
           {canEditDraft && (
             <section className="card" aria-labelledby="summary-heading">
               <h2 id="summary-heading">Clinical summary</h2>
-              {requestedChange && (
-                <div className="banner banner-attention" role="status">
-                  <strong>A doctor asked you to revise this summary.</strong>
-                  {requestedChange.note && (
-                    <blockquote className="review-note">{requestedChange.note}</blockquote>
-                  )}
-                  <span>
-                    Edit the draft, then choose <em>Save revision</em> to send it back for sign-off.
-                  </span>
-                </div>
-              )}
-              {!isDoctor && detail.state === 'ENDED' && !hasSummary && !requestedChange && (
+              {!isDoctor && detail.state === 'ENDED' && !hasSummary && (
                 <p className="banner banner-attention" role="status">
                   Write and save the summary — a doctor can only sign off once a draft is saved.
                 </p>
@@ -711,11 +488,7 @@ export default function ConsultationRoom(): JSX.Element {
                   disabled={!dirty || !draft.trim() || saveState === 'saving'}
                   onClick={() => void saveDraft()}
                 >
-                  {saveState === 'saving'
-                    ? 'Saving…'
-                    : requestedChange
-                      ? 'Save revision'
-                      : 'Save draft'}
+                  {saveState === 'saving' ? 'Saving…' : 'Save draft'}
                 </button>
                 {canFinalize && (
                   <button
@@ -751,22 +524,10 @@ export default function ConsultationRoom(): JSX.Element {
           {reviewingForSignoff && (
             <section className="card" aria-labelledby="review-heading">
               <h2 id="review-heading">Summary awaiting your sign-off</h2>
-              {reviewNotice && !requestedChange && (
+              {reviewNotice && (
                 <p className="notice" role="status">
                   {reviewNotice}
                 </p>
-              )}
-              {requestedChange && (
-                <div className="banner banner-attention" role="status">
-                  <strong>Returned to the drafter for changes.</strong>
-                  {requestedChange.note && (
-                    <blockquote className="review-note">{requestedChange.note}</blockquote>
-                  )}
-                  <span>
-                    It stays on the sign-off list until they save a revision. You can still finalize
-                    it as it stands.
-                  </span>
-                </div>
               )}
               {hasSummary ? (
                 <pre className="summary-text">{draft}</pre>
@@ -774,18 +535,9 @@ export default function ConsultationRoom(): JSX.Element {
                 <p className="muted">No draft has been saved for this consultation yet.</p>
               )}
               <p className="hint">
-                Drafted by the clinician who ran this consultation. Sign off to finalize it, or
-                return it with a note. After finalizing, corrections can only be added as addenda.
+                Drafted by the clinician who ran this consultation. Signing off finalizes it; a
+                signed summary cannot be changed.
               </p>
-              <label htmlFor="review-note">Note for the drafter (optional)</label>
-              <textarea
-                id="review-note"
-                rows={2}
-                value={changeNote}
-                maxLength={2000}
-                placeholder="What should be revised before this is signed?"
-                onChange={(e) => setChangeNote(e.target.value)}
-              />
               <div className="actions editor-actions">
                 <button
                   type="button"
@@ -793,14 +545,6 @@ export default function ConsultationRoom(): JSX.Element {
                   onClick={() => setConfirming('finalize')}
                 >
                   Finalize &amp; sign off
-                </button>
-                <button
-                  type="button"
-                  className="secondary"
-                  disabled={!hasSummary || busy}
-                  onClick={() => void requestChanges()}
-                >
-                  Request changes
                 </button>
               </div>
             </section>
@@ -815,17 +559,15 @@ export default function ConsultationRoom(): JSX.Element {
               onCancel={() => setConfirming(null)}
             >
               <p>
-                Finalizing locks this summary and shares it with the patient. Afterwards,
-                corrections can only be added as addenda.
+                Finalizing locks this summary and shares it with the patient. It cannot be changed
+                afterwards.
                 {isAssignedClinician && dirty && ' Your unsaved changes will be saved first.'}
               </p>
             </ConfirmPanel>
           )}
 
           {!isParticipant && !reviewingForSignoff && (
-            <p className="muted">
-              Messages and files are visible to the consultation’s participants.
-            </p>
+            <p className="muted">Messages are visible to the consultation’s participants.</p>
           )}
         </div>
       </div>

@@ -114,9 +114,9 @@ export default function PatientHome(): JSX.Element {
     }
   }, []);
 
-  // Live position / state pushes (ADR-0009); slow interval is a fallback only.
+  // Live position / state pushes (ADR-0007); slow interval is a fallback only.
   usePatientUpdates(refresh);
-  // Surface meaningful state changes (claim/start/end/finalize) as toasts (ADR-0021).
+  // Surface meaningful state changes (claim/start/end/finalize) as toasts (ADR-0019).
   usePatientStateNotifications(mine ?? []);
   useEffect(() => {
     void refresh();

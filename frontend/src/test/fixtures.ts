@@ -69,7 +69,6 @@ export const assignedConsultations: AssignedConsultation[] = [
     endedAt: '2026-10-22T09:20:00.000Z',
     summaryDrafted: true,
     summaryFinalized: true,
-    summaryChangesRequested: false,
   },
   {
     id: 'c-2',
@@ -82,7 +81,6 @@ export const assignedConsultations: AssignedConsultation[] = [
     endedAt: null,
     summaryDrafted: false,
     summaryFinalized: false,
-    summaryChangesRequested: false,
   },
 ];
 
@@ -95,7 +93,6 @@ export const pendingSignoff: PendingSignoff[] = [
     endedAt: '2026-10-22T09:20:00.000Z',
     draftedBy: 'u-nurse',
     draftedAt: '2026-10-22T09:22:00.000Z',
-    changesRequested: false,
   },
   {
     id: 'c-2',
@@ -105,7 +102,6 @@ export const pendingSignoff: PendingSignoff[] = [
     endedAt: '2026-10-22T09:40:00.000Z',
     draftedBy: 'u-nurse',
     draftedAt: '2026-10-22T09:41:00.000Z',
-    changesRequested: true,
   },
 ];
 
@@ -159,8 +155,6 @@ export function summary(overrides: Partial<Summary> = {}): Summary {
     finalizedBy: 'u-doctor',
     finalizedAt: '2026-10-22T09:10:00.000Z',
     finalized: true,
-    changesRequestedAt: null,
-    changesRequestedNote: null,
     ...overrides,
   };
 }

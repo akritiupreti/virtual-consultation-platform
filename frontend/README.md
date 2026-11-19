@@ -13,7 +13,7 @@ Phase 2 ships the **MVP screens** for the vertical slice:
 - **Summary** (`/consultations/:id/summary`) — view (and, for doctors, finalize) the summary.
 - **Audit log** (`/audit`, admins) — system activity only, no clinical content.
 
-Real-time updates arrive in Phase 3 (WebSockets + Redis); the MVP polls.
+Real-time updates arrive in Phase 3 (WebSockets); the MVP polls.
 
 ## Running locally
 

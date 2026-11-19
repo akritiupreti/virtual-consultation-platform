@@ -55,8 +55,6 @@ export interface AssignedConsultation {
   /** A draft exists; an ENDED case without one cannot reach a doctor's sign-off. */
   summaryDrafted: boolean;
   summaryFinalized: boolean;
-  /** A doctor returned the draft for revision and the drafter has not re-saved yet (ADR-0025). */
-  summaryChangesRequested: boolean;
 }
 
 /**
@@ -72,11 +70,9 @@ export interface PendingSignoff {
   endedAt: string | null;
   draftedBy: string;
   draftedAt: string | null;
-  /** Already returned to the drafter, who has not revised it yet (ADR-0025). */
-  changesRequested: boolean;
 }
 
-/** A case the calling doctor signed off — their own review history (ADR-0029). */
+/** A case the calling doctor signed off — their own review history (ADR-0023). */
 export interface SignedOff {
   id: string;
   priority: Priority;
@@ -125,30 +121,6 @@ export interface Summary {
   finalizedBy: string | null;
   finalizedAt: string | null;
   finalized: boolean;
-  /** Set while a doctor's revision request is outstanding; the note is their feedback (ADR-0025). */
-  changesRequestedAt: string | null;
-  changesRequestedNote: string | null;
-  /** Append-only corrections to a finalized summary, oldest first (FR-13). */
-  addenda?: Addendum[];
-}
-
-export interface Addendum {
-  id: string;
-  authorId: string;
-  content: string;
-  createdAt: string;
-}
-
-/** A file shared in a consultation; `downloadUrl` is short-lived and user-scoped (ADR-0007). */
-export interface Attachment {
-  id: string;
-  filename: string;
-  mimeType: string;
-  sizeBytes: number;
-  uploadedBy: string;
-  createdAt: string;
-  downloadUrl: string;
-  expiresAt: string;
 }
 
 export interface AuditEntry {
@@ -241,9 +213,7 @@ export function setToken(token: string | null): void {
 }
 
 async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
-  // A multipart body sets its own boundary header, so only JSON gets the type.
-  const headers: Record<string, string> =
-    init.body instanceof FormData ? {} : { 'Content-Type': 'application/json' };
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   const token = getToken();
   if (token) {
     headers.Authorization = `Bearer ${token}`;
@@ -316,24 +286,7 @@ export const api = {
     apiFetch(`/consultations/${id}/summary`, body({ content })),
   finalizeSummary: (id: string): Promise<Summary> =>
     apiFetch(`/consultations/${id}/summary/finalize`, body({})),
-  // A reviewing doctor returns the draft to the drafter to revise (ADR-0024). The
-  // optional note is feedback for the drafter; the draft is returned unchanged.
-  requestSummaryChanges: (id: string, note?: string): Promise<Summary> =>
-    apiFetch(`/consultations/${id}/summary/request-changes`, body(note ? { note } : {})),
   getSummary: (id: string): Promise<Summary> => apiFetch(`/consultations/${id}/summary`),
-  addAddendum: (id: string, content: string): Promise<Summary> =>
-    apiFetch(`/consultations/${id}/summary/addendum`, body({ content })),
-
-  getAttachments: (id: string): Promise<Attachment[]> =>
-    apiFetch(`/consultations/${id}/attachments`),
-  uploadAttachment: (id: string, file: File): Promise<Attachment> => {
-    const form = new FormData();
-    form.append('file', file);
-    return apiFetch(`/consultations/${id}/attachments`, { method: 'POST', body: form });
-  },
-  // The patient takes back a file shared by mistake, while in session (ADR-0028).
-  deleteAttachment: (id: string, attachmentId: string): Promise<void> =>
-    apiFetch(`/consultations/${id}/attachments/${attachmentId}`, { method: 'DELETE' }),
 
   // The server paginates and filters the audit trail ({ items, total, limit, offset }).
   // Empty filters are dropped so they never reach the query string as blanks.
@@ -355,8 +308,3 @@ export const api = {
   reactivateUser: (id: string): Promise<UserAccount> =>
     apiFetch(`/users/${id}/reactivate`, body({})),
 };
-
-/** Absolute URL for an attachment's signed, relative download path. */
-export function attachmentHref(attachment: Pick<Attachment, 'downloadUrl'>): string {
-  return `${BASE_URL}${attachment.downloadUrl}`;
-}

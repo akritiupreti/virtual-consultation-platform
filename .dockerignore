@@ -12,7 +12,7 @@ docs
 .env
 .env.*
 !.env.example
-# Local attachment object store (ADR-0007) — never copy uploaded files into an image.
+# Local runtime data — never copy into an image.
 var/
 backend/var/
 # Editor / OS / spec

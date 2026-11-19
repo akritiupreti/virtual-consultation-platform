@@ -17,7 +17,7 @@ import {
 } from './helpers';
 
 /**
- * CS-7 (live updates) and CS-9 (WS auth/authz boundaries), ADR-0005/0009.
+ * CS-7 (live updates) and CS-9 (WS auth/authz boundaries), ADR-0004/0007.
  *
  * Proves two things over real socket.io connections to a listening app:
  *  1. Two subscribers see live queue/room updates (the Phase 3 exit criterion).
@@ -205,7 +205,7 @@ describe('real-time gateway (e2e)', () => {
     expect(event.message.body).toBe('How are you feeling now?');
   });
 
-  // ── Live sign-off / summary signals (ADR-0027) ───────────────────────────────
+  // ── Live sign-off / summary signals (ADR-0022) ───────────────────────────────
 
   it('signals summary changes to every doctor and the drafter — never the patient', async () => {
     const consultationId = await seedQueuedRequest('patient@test.local');
@@ -233,23 +233,21 @@ describe('real-time gateway (e2e)', () => {
     await expect(ended).resolves.toEqual({ consultationId, reason: 'ended' });
     await expect(nurseState).resolves.toMatchObject({ consultationId, state: 'ENDED' });
 
-    // A doctor returns the draft: the drafter's open editor/list reconcile live.
-    const nurseHears = waitForEvent<{ reason: string }>(nurseSocket, 'summary:updated');
-    // Other doctors' worklists reconcile too (the row now shows "returned").
-    const doctorSeesReturn = waitForEvent<{ reason: string }>(doctorSocket, 'summary:updated');
-    await summaries.requestChanges({ id: doctor.id, role: Role.DOCTOR }, consultationId, {
-      note: 'Add the temperature.',
-    });
-    await expect(doctorSeesReturn).resolves.toMatchObject({ reason: 'changes_requested' });
-    const signal = await nurseHears;
-    expect(signal).toEqual({ consultationId, reason: 'changes_requested' });
-    // Content-free: the doctor's note never rides this broadcast signal.
-    expect(JSON.stringify(signal)).not.toContain('temperature');
-
-    // The drafter revises: the reviewing doctor's open copy reconciles live.
+    // The drafter revises: the reviewing doctor's open copy and the drafter's own
+    // list reconcile live.
     const doctorHears = waitForEvent<{ reason: string }>(doctorSocket, 'summary:updated');
+    const nurseHears = waitForEvent<{ reason: string }>(nurseSocket, 'summary:updated');
     await summaries.draft(asNurse, consultationId, { content: 'Viral URTI; T 38.1C.' });
     await expect(doctorHears).resolves.toEqual({ consultationId, reason: 'drafted' });
+    const signal = await nurseHears;
+    expect(signal).toEqual({ consultationId, reason: 'drafted' });
+    // Content-free: the summary text never rides this broadcast signal.
+    expect(JSON.stringify(signal)).not.toContain('38.1');
+
+    // A doctor signs it off: every doctor's worklist drops the case live.
+    const doctorSeesSignoff = waitForEvent<{ reason: string }>(doctorSocket, 'summary:updated');
+    await summaries.finalize({ id: doctor.id, role: Role.DOCTOR }, consultationId);
+    await expect(doctorSeesSignoff).resolves.toEqual({ consultationId, reason: 'finalized' });
 
     // A draft is never the patient's to see — not even as a signal.
     expect(patientHeard).toEqual([]);

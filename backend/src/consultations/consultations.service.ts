@@ -12,7 +12,6 @@ import {
 } from '../common/errors/domain-exceptions';
 import { PrismaService } from '../prisma/prisma.service';
 import { RealtimeService } from '../realtime/realtime.service';
-import { REASSIGN, transitionFor } from '../common/state-machine/transitions';
 import { SubmitRequestDto } from './dto/submit-request.dto';
 
 /** Serving order within the queue (higher rank is served first). */
@@ -66,11 +65,9 @@ export interface AssignedConsultationView {
   claimedAt: Date | null;
   startedAt: Date | null;
   endedAt: Date | null;
-  /** A summary draft exists — without one an ENDED case cannot reach sign-off (ADR-0020). */
+  /** A summary draft exists — without one an ENDED case cannot reach sign-off (ADR-0018). */
   summaryDrafted: boolean;
   summaryFinalized: boolean;
-  /** A doctor returned the draft for the drafter to revise, not yet re-drafted (ADR-0025). */
-  summaryChangesRequested: boolean;
 }
 
 /**
@@ -87,14 +84,12 @@ export interface PendingSignoffView {
   endedAt: Date | null;
   draftedBy: string;
   draftedAt: Date | null;
-  /** A doctor already returned this draft and the drafter has not revised it yet (ADR-0025). */
-  changesRequested: boolean;
 }
 
 /**
- * A doctor's own sign-off history row (ADR-0029): a case whose summary this doctor
+ * A doctor's own sign-off history row (ADR-0023): a case whose summary this doctor
  * finalized. Minimal, like the worklist — never the summary text. The doctor reads
- * the signed summary itself through VIEW_SUMMARY's finalizing-doctor grant (ADR-0023).
+ * the signed summary itself through VIEW_SUMMARY's finalizing-doctor grant (ADR-0020).
  */
 export interface SignedOffView {
   id: string;
@@ -258,9 +253,9 @@ export class ConsultationsService {
     });
 
     // Resolve "N ahead" for every queued case from a single ordered read of the
-    // queue, rather than one cache/COUNT lookup per queued row. This removes an
-    // N+1 (a patient may hold several queued cases) and bounds the work on the
-    // Redis-down degrade path to one authoritative query (ADR-0002/0004, ADR-0019).
+    // queue, rather than one COUNT lookup per queued row. This removes an N+1 (a
+    // patient may hold several queued cases) and bounds the work to one
+    // authoritative query (ADR-0002).
     const positions = rows.some((r) => r.state === ConsultationState.QUEUED)
       ? await this.queuePositions()
       : null;
@@ -279,8 +274,8 @@ export class ConsultationsService {
   /**
    * A clinician's own assigned cases (claimedBy = self), newest claim first, so
    * they can return to a consultation — or its finalised summary — without the
-   * URL. Only cases still assigned to them appear; a reassigned case (claimedBy
-   * cleared, ADR-0012) drops off the list, as it is no longer theirs.
+   * URL. Only cases still assigned to them appear; a requeued case (claimedBy
+   * cleared by the claim-start TTL, ADR-0008) drops off the list.
    */
   async getAssigned(user: ActingUser): Promise<AssignedConsultationView[]> {
     const rows = await this.prisma.consultation.findMany({
@@ -288,7 +283,7 @@ export class ConsultationsService {
       orderBy: { claimedAt: 'desc' },
       include: {
         intake: { select: { symptomCategory: true, chiefComplaint: true } },
-        summary: { select: { finalizedAt: true, changesRequestedAt: true } },
+        summary: { select: { finalizedAt: true } },
       },
     });
 
@@ -304,9 +299,6 @@ export class ConsultationsService {
       endedAt: row.endedAt,
       summaryDrafted: row.summary != null,
       summaryFinalized: row.summary?.finalizedAt != null,
-      // Pending only while unfinalized — a finalized summary supersedes any request.
-      summaryChangesRequested:
-        row.summary?.changesRequestedAt != null && row.summary?.finalizedAt == null,
     }));
   }
 
@@ -331,7 +323,7 @@ export class ConsultationsService {
       orderBy: { endedAt: 'asc' },
       include: {
         intake: { select: { symptomCategory: true, chiefComplaint: true } },
-        summary: { select: { draftedBy: true, createdAt: true, changesRequestedAt: true } },
+        summary: { select: { draftedBy: true, createdAt: true } },
       },
     });
 
@@ -344,14 +336,13 @@ export class ConsultationsService {
       endedAt: row.endedAt,
       draftedBy: row.summary?.draftedBy ?? '',
       draftedAt: row.summary?.createdAt ?? null,
-      changesRequested: row.summary?.changesRequestedAt != null,
     }));
   }
 
   /**
-   * The calling doctor's completed sign-offs, newest first (ADR-0029): every case
+   * The calling doctor's completed sign-offs, newest first (ADR-0023): every case
    * whose summary they finalized, whether a nurse or they ran it. Scoped strictly to
-   * `finalizedBy = caller` — exactly the summaries ADR-0023 already lets them read —
+   * `finalizedBy = caller` — exactly the summaries ADR-0020 already lets them read —
    * so it widens nothing; it only makes their own final reviews findable again.
    */
   async getSignedOff(user: ActingUser): Promise<SignedOffView[]> {
@@ -514,7 +505,7 @@ export class ConsultationsService {
       claimedBy: existing.claimedBy,
     });
     // A case ending with a draft already written enters the doctors' sign-off
-    // worklist now, so tell them (ADR-0027).
+    // worklist now, so tell them (ADR-0022).
     this.realtime.notifySummaryUpdated({
       consultationId: id,
       claimedBy: existing.claimedBy,
@@ -583,66 +574,6 @@ export class ConsultationsService {
     return { id: updated.id, state: updated.state, priority: updated.priority };
   }
 
-  /**
-   * Reassign every active case (CLAIMED or IN_SESSION) of a clinician back to the
-   * queue — used when that clinician is deactivated mid-session (FR-24, ADR-0012).
-   * Each reassignment is an atomic conditional UPDATE (the same race-safe pattern
-   * as claim/requeue), audited as CONSULTATION_REASSIGNED (system actor, who/what/
-   * when only), and fanned out: the patient's status view and the queue both
-   * reconcile live. The case keeps its original enqueue time, so the patient does
-   * not lose their place in line. Returns the ids reassigned.
-   */
-  async reassignActiveCasesOf(clinicianId: string, reason: string): Promise<string[]> {
-    const transition = transitionFor(REASSIGN)!;
-
-    const active = await this.prisma.consultation.findMany({
-      where: { claimedBy: clinicianId, state: { in: transition.from } },
-      select: { id: true, patientId: true },
-    });
-
-    const reassigned: Array<{ id: string; patientId: string }> = [];
-    for (const consultation of active) {
-      const result = await this.prisma.consultation.updateMany({
-        where: { id: consultation.id, claimedBy: clinicianId, state: { in: transition.from } },
-        data: {
-          state: transition.to,
-          claimedBy: null,
-          claimedAt: null,
-          startedAt: null,
-          version: { increment: 1 },
-        },
-      });
-      if (result.count !== 1) {
-        // The case moved under us (e.g. the clinician completed it just now).
-        continue;
-      }
-      reassigned.push(consultation);
-
-      await this.audit.record({
-        actorId: null,
-        eventType: AUDIT_EVENTS.CONSULTATION_REASSIGNED,
-        consultationId: consultation.id,
-        metadata: { reason, previousClaimedBy: clinicianId },
-      });
-    }
-
-    // Fan-out after each write commits; patients and the queue reconcile from the
-    // authoritative DB state (the same pattern as the claim-TTL sweeper, ADR-0004).
-    for (const consultation of reassigned) {
-      this.realtime.broadcastConsultationUpdated({
-        id: consultation.id,
-        patientId: consultation.patientId,
-        state: transition.to,
-        // The deactivated clinician's sockets are already closed; harmless if so.
-        claimedBy: clinicianId,
-      });
-    }
-    if (reassigned.length > 0) {
-      await this.realtime.notifyQueueChanged('reassigned');
-    }
-    return reassigned.map((c) => c.id);
-  }
-
   // ── internals ──────────────────────────────────────────────────────────────
 
   private async loadOr404(id: string): Promise<Consultation> {
@@ -699,13 +630,6 @@ export class ConsultationsService {
     priority: Priority;
     enqueuedAt: Date | null;
   }): Promise<number> {
-    // Fast path: the position cache (ADR-0004). PostgreSQL remains authoritative,
-    // so a miss (or no Redis) falls through to the exact count below.
-    const cached = await this.realtime.getCachedPosition(consultation.id);
-    if (cached !== null) {
-      return cached;
-    }
-
     const higherTiers = (Object.keys(PRIORITY_RANK) as Priority[]).filter(
       (p) => PRIORITY_RANK[p] > PRIORITY_RANK[consultation.priority],
     );

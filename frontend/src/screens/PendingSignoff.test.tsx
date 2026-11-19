@@ -22,7 +22,7 @@ vi.mock('../lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../lib/api')>();
   return { ...actual, api: { ...actual.api, ...mock } };
 });
-// Capture the live signal handler (ADR-0027) so a test can play a server push.
+// Capture the live signal handler (ADR-0022) so a test can play a server push.
 const live = vi.hoisted(() => ({ summary: null as null | (() => void) }));
 vi.mock('../lib/realtime', () => ({
   useSummaryUpdates: (cb: () => void) => {
@@ -43,7 +43,7 @@ describe('PendingSignoff (doctor)', () => {
     mock.getSignedOff.mockReset().mockResolvedValue([]);
   });
 
-  it("keeps the doctor's completed sign-offs under Completed, linking to the summary (ADR-0029)", async () => {
+  it("keeps the doctor's completed sign-offs under Completed, linking to the summary (ADR-0023)", async () => {
     mock.getPendingSignoff.mockResolvedValue(fixtures.pendingSignoff);
     mock.getSignedOff.mockResolvedValue(signedOff);
     const { user, findAllByRole, getByRole, getAllByRole, getByText, queryByText } = render();
@@ -81,12 +81,11 @@ describe('PendingSignoff (doctor)', () => {
     expect(links[1]).toHaveAttribute('href', '/consultations/c-2');
   });
 
-  it('marks a case already returned to the drafter, apart from ones ready to review', async () => {
+  it('marks each waiting case ready to review and counts them in the header', async () => {
     mock.getPendingSignoff.mockResolvedValue(fixtures.pendingSignoff);
-    const { findByText, getByText } = render();
-    expect(await findByText('Returned to drafter')).toBeInTheDocument();
-    expect(getByText('Ready to review')).toBeInTheDocument();
-    expect(document.querySelector('.header-stat')).toHaveTextContent('1 ready to review');
+    const { findAllByText } = render();
+    expect(await findAllByText('Ready to review')).toHaveLength(2);
+    expect(document.querySelector('.header-stat')).toHaveTextContent('2 ready to review');
   });
 
   it('refreshes live when a summary signal arrives (no polling wait)', async () => {

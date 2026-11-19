@@ -148,17 +148,6 @@ export function timeAgo(iso: string | null | undefined, now = Date.now()): strin
   return elapsed === 'just now' || elapsed === '—' ? elapsed : `${elapsed} ago`;
 }
 
-/** `1536` → `1.5 KB`. */
-export function formatBytes(bytes: number): string {
-  if (bytes < 1024) {
-    return `${bytes} B`;
-  }
-  if (bytes < 1024 * 1024) {
-    return `${(bytes / 1024).toFixed(1)} KB`;
-  }
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
 /** First 8 characters of an opaque id — enough to tell rows apart, not to read. */
 export function shortId(id: string | null | undefined): string {
   return id ? id.slice(0, 8) : '—';

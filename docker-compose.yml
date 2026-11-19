@@ -1,9 +1,9 @@
-# Full stack (Phase 5): `docker compose up` brings up PostgreSQL, Redis, the
-# backend API and the frontend together — one command, the whole system (SC-14,
-# NFR-8). Deployment target is local Docker Compose (ADR-0008). Secrets and tunables
+# Full stack (Phase 5): `docker compose up` brings up PostgreSQL, the backend API
+# and the frontend together — one command, the whole system (SC-14,
+# NFR-8). Deployment target is local Docker Compose (ADR-0006). Secrets and tunables
 # come from the single git-ignored root .env (see .env.example); the backend's
 # connection strings and ports are overridden here so the containers talk over the
-# internal Compose network (db:5432 / redis:6379) regardless of the host-port
+# internal Compose network (db:5432) regardless of the host-port
 # overrides a developer uses locally.
 
 services:
@@ -27,24 +27,8 @@ services:
       timeout: 5s
       retries: 10
 
-  # Redis — ephemeral real-time state only; never a source of truth
-  # (ADR-0004: presence, pub/sub fan-out, cached queue positions).
-  redis:
-    image: redis:7-alpine
-    container_name: vcp-redis
-    restart: unless-stopped
-    ports:
-      # Host port is configurable to avoid clashes with other local Redis
-      # instances; container port is always 6379. Override REDIS_PORT in .env.
-      - '${REDIS_PORT:-6379}:6379'
-    healthcheck:
-      test: ['CMD', 'redis-cli', 'ping']
-      interval: 5s
-      timeout: 5s
-      retries: 10
-
   # Backend API (NestJS). Built from the repo root (monorepo lockfile). It waits
-  # for the database and Redis to be healthy, applies migrations on start
+  # for the database to be healthy, applies migrations on start
   # (entrypoint), then serves on container port 3000, published on BACKEND_PORT.
   backend:
     build:
@@ -55,9 +39,7 @@ services:
     depends_on:
       db:
         condition: service_healthy
-      redis:
-        condition: service_healthy
-    # Secrets / tunables (JWT, attachments, throttle, TTL, seed) load from .env…
+    # Secrets / tunables (JWT, throttle, TTL, seed) load from .env…
     env_file:
       - .env
     # …while connection strings, ports and origins are pinned to the internal
@@ -66,16 +48,11 @@ services:
       NODE_ENV: production
       PORT: '3000'
       DATABASE_URL: postgresql://${POSTGRES_USER:-vcp}:${POSTGRES_PASSWORD:-vcp_dev_password}@db:5432/${POSTGRES_DB:-vcp}?schema=public
-      REDIS_URL: redis://redis:6379
       CORS_ORIGIN: http://localhost:${FRONTEND_PORT:-8088}
-      ATTACHMENT_STORAGE_DIR: /app/backend/var/attachments
     ports:
       # Host port is configurable to avoid clashing with another local API
       # (container port is always 3000). Override BACKEND_PORT in .env.
       - '${BACKEND_PORT:-3100}:3000'
-    volumes:
-      # Persist the local attachment object store across restarts (ADR-0007).
-      - vcp-attachments:/app/backend/var/attachments
     healthcheck:
       # Liveness endpoint (no dependencies); readiness is GET /ready.
       test:
@@ -107,4 +84,3 @@ services:
 
 volumes:
   vcp-db-data:
-  vcp-attachments:

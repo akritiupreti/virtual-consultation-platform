@@ -29,7 +29,7 @@ means someone else already claimed it → respond `409 Conflict`.
   infrastructure, correct across instances, simple to test.
 - **Application-level lock / in-memory mutex** — fails across multiple instances
   and is racy; rejected (the reviewer specifically favoured DB-level handling).
-- **Redis distributed lock** — works but adds a dependency and failure modes for a
+- **External distributed lock service** — works but adds a dependency and failure modes for a
   guarantee Postgres already provides for this case.
 
 ## Consequences

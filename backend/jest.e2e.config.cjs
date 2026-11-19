@@ -11,13 +11,13 @@ module.exports = {
   moduleFileExtensions: ['ts', 'js', 'json'],
   testTimeout: 30000,
   // When run with --coverage (test:cov:e2e) collect over the SAME source set as
-  // the unit config, so the merged report (ADR-0016) is a true union: a file is
+  // the unit config, so the merged report (ADR-0014) is a true union: a file is
   // "covered" if either suite executed it, and files neither suite touched still
   // count against the gate.
   collectCoverageFrom: [
     'src/**/*.(t|j)s',
     '!src/main.ts',
     '!src/prisma/seed.ts',
-    '!src/realtime/redis-io.adapter.ts',
+    '!src/realtime/cors-io.adapter.ts',
   ],
 };

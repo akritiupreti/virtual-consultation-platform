@@ -30,7 +30,7 @@ export function StateBadge({ state }: { state: ConsultationState }): JSX.Element
   return <span className={`pill pill-${STATE_TONE[state] ?? 'neutral'}`}>{stateLabel(state)}</span>;
 }
 
-/** A free-form status pill for derived states ("Changes requested", "Summary needed"). */
+/** A free-form status pill for derived states ("Ready to review", "Summary needed"). */
 export function Pill({
   tone = 'neutral',
   children,

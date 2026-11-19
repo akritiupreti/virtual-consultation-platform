@@ -6,10 +6,10 @@ import { ConsultationsService } from '../src/consultations/consultations.service
 /**
  * Unit coverage for the consultation guards/degrade branches the e2e happy paths
  * do not reach: 404s, the non-queued re-priority guard, optimistic-conflict
- * aborts, the cached-position fast path, and clinician reassignment (ADR-0012).
+ * aborts and the queue-position count.
  * The DB-atomic claim itself is proven end-to-end (CS-2); here Prisma is mocked.
  */
-function build(cachedPosition: number | null = null) {
+function build() {
   const prisma = {
     consultation: {
       findUnique: jest.fn(),
@@ -26,7 +26,6 @@ function build(cachedPosition: number | null = null) {
     notifyQueueChanged: jest.fn().mockResolvedValue(undefined),
     broadcastConsultationUpdated: jest.fn(),
     notifySummaryUpdated: jest.fn(),
-    getCachedPosition: jest.fn().mockResolvedValue(cachedPosition),
   };
   const config = { get: jest.fn().mockReturnValue(undefined) };
   const service = new ConsultationsService(
@@ -56,7 +55,8 @@ const row = (over: Record<string, unknown> = {}) => ({
 
 describe('ConsultationsService (unit)', () => {
   it('submits intake with defaults and enqueues in one transaction', async () => {
-    const { service, prisma, realtime } = build(0);
+    const { service, prisma, realtime } = build();
+    prisma.consultation.count.mockResolvedValue(0); // nobody ahead
     prisma.$transaction.mockImplementation(async (cb: (tx: unknown) => unknown) =>
       cb({
         consultation: {
@@ -120,8 +120,8 @@ describe('ConsultationsService (unit)', () => {
     expect(prisma.consultation.findMany).toHaveBeenCalledTimes(1);
   });
 
-  it('submitRequest computes the new position from the DB on a cache miss', async () => {
-    const { service, prisma } = build(null); // getCachedPosition → null
+  it('submitRequest computes the new position from the DB', async () => {
+    const { service, prisma } = build();
     prisma.$transaction.mockImplementation(async (cb: (tx: unknown) => unknown) =>
       cb({
         consultation: {
@@ -223,29 +223,7 @@ describe('ConsultationsService (unit)', () => {
     await expect(service.start(doctor, 'c-1')).rejects.toBeInstanceOf(IllegalTransitionException);
   });
 
-  it('reassigns active cases of a deactivated clinician (skipping raced rows)', async () => {
-    const { service, prisma, realtime } = build();
-    prisma.consultation.findMany.mockResolvedValue([
-      { id: 'c-1', patientId: 'p1' },
-      { id: 'c-2', patientId: 'p2' },
-    ]);
-    prisma.consultation.updateMany
-      .mockResolvedValueOnce({ count: 1 })
-      .mockResolvedValueOnce({ count: 0 }); // c-2 moved under us → skipped
-    const ids = await service.reassignActiveCasesOf('doc', 'clinician_deactivated');
-    expect(ids).toEqual(['c-1']);
-    expect(realtime.notifyQueueChanged).toHaveBeenCalledWith('reassigned');
-  });
-
-  it('reassign is a no-op when the clinician has no active cases', async () => {
-    const { service, prisma, realtime } = build();
-    prisma.consultation.findMany.mockResolvedValue([]);
-    const ids = await service.reassignActiveCasesOf('doc', 'clinician_deactivated');
-    expect(ids).toEqual([]);
-    expect(realtime.notifyQueueChanged).not.toHaveBeenCalled();
-  });
-
-  it("lists only the calling doctor's own sign-offs, newest first (ADR-0029)", async () => {
+  it("lists only the calling doctor's own sign-offs, newest first (ADR-0023)", async () => {
     const { service, prisma } = build();
     prisma.consultation.findMany.mockResolvedValue([
       row({
@@ -307,7 +285,6 @@ describe('ConsultationsService (unit)', () => {
         endedAt: new Date('2026-10-22T09:00:00Z'),
         draftedBy: 'nurse-1',
         draftedAt: new Date('2026-10-22T09:05:00Z'),
-        changesRequested: false,
       },
     ]);
     // Minimal view must never carry the summary content.

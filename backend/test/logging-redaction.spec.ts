@@ -6,7 +6,7 @@ import { buildLoggerParams } from '../src/common/logging/logging.config';
  * a future config change can't quietly start leaking headers, bodies, query strings
  * or clinical content into the log stream.
  */
-describe('Logging privacy policy (ADR-0013)', () => {
+describe('Logging privacy policy (ADR-0011)', () => {
   const pinoHttp = buildLoggerParams().pinoHttp as Record<string, any>;
 
   it('request serializer emits only id, method and path — never headers or body', () => {

@@ -5,8 +5,8 @@ ID that traces a request end-to-end, dependency-aware health probes, and metrics
 This document is **diagram-first** — each section opens with the picture, then
 explains it. Delivered in Phase 5.
 
-Decisions: [ADR-0013 structured logging & correlation IDs](adr/0013-structured-logging.md) ·
-[ADR-0014 metrics](adr/0014-metrics.md) · [ADR-0004 Redis responsibilities](adr/0004-redis-responsibilities.md).
+Decisions: [ADR-0011 structured logging & correlation IDs](adr/0011-structured-logging.md) ·
+[ADR-0012 metrics](adr/0012-metrics.md).
 Related: [architecture](architecture.md) · [deployment](deployment.md) ·
 [security & privacy](security-privacy.md) · [audit log](audit-logging.md).
 
@@ -17,7 +17,7 @@ Related: [architecture](architecture.md) · [deployment](deployment.md) ·
 
 ---
 
-## 1. Structured logging (ADR-0013)
+## 1. Structured logging (ADR-0011)
 
 Logs are **JSON** emitted by `pino` (via `nestjs-pino`), which replaces the default
 Nest logger so every existing `Logger` call is reformatted with no code change. A
@@ -122,52 +122,40 @@ flowchart TB
     end
 
     pg[(PostgreSQL)]
-    rd[(Redis)]
 
     ready -->|"SELECT 1 — GATES"| pg
-    ready -->|"PING — does NOT gate"| rd
 
     pg -->|up| ok["200 ok"]
     pg -->|down| fail["503 error<br/>(pull from rotation)"]
-    rd -->|up / disabled / degraded| ok
 ```
 
 - **`GET /health` (liveness)** checks nothing external: if the process answers, it's
   alive. A container orchestrator uses it to decide whether to restart the process.
   (It also backs the Compose `healthcheck`.)
-- **`GET /ready` (readiness)**, built on `@nestjs/terminus`, checks the real
-  dependencies:
-  - **PostgreSQL gates readiness.** A `SELECT 1` must succeed; the DB is the system
-    of record (ADR-0002), so if it's unreachable the instance is **not ready** and
-    returns **503** — a load balancer would stop sending it traffic until it
-    recovers.
-  - **Redis is reported but never gates.** Per [ADR-0004](adr/0004-redis-responsibilities.md),
-    Redis is ephemeral and the app must **degrade gracefully**: no `REDIS_URL` →
-    `disabled`; reachable → `up`; unreachable → `down` + `degraded`. In every case
-    the node stays ready (real-time fan-out/presence degrade; core flows keep
-    working), so a cache blip never takes the API out of rotation.
+- **`GET /ready` (readiness)**, built on `@nestjs/terminus`, checks the one real
+  dependency: **PostgreSQL gates readiness.** A `SELECT 1` must succeed; the DB is
+  the system of record (ADR-0002), so if it's unreachable the instance is **not
+  ready** and returns **503** — a load balancer would stop sending it traffic until
+  it recovers.
 
-**CS-17** asserts `/ready` returns 200 with `postgres: up` and a reported `redis`
-state while the dependencies are healthy.
+**CS-17** asserts `/ready` returns 200 with `postgres: up` while the database is
+healthy.
 
 ---
 
-## 4. Metrics (ADR-0014)
+## 4. Metrics (ADR-0012)
 
 `GET /metrics` exposes Prometheus-format metrics for a scraper (or `curl`):
 
-| Metric                          | Type      | Meaning                                                                                  |
-| ------------------------------- | --------- | ---------------------------------------------------------------------------------------- |
-| `http_request_duration_seconds` | histogram | Request latency by `method`, `route` (template), `status`; `_count` = request throughput |
-| `vcp_queue_depth`               | gauge     | Consultations currently `QUEUED`                                                         |
-| `vcp_active_consultations`      | gauge     | Consultations currently `IN_SESSION`                                                     |
-| `process_*`, `nodejs_*`         | various   | Default process metrics (event-loop lag, memory, GC)                                     |
+| Metric                     | Type    | Meaning                                              |
+| -------------------------- | ------- | ---------------------------------------------------- |
+| `vcp_queue_depth`          | gauge   | Consultations currently `QUEUED`                     |
+| `vcp_active_consultations` | gauge   | Consultations currently `IN_SESSION`                 |
+| `process_*`, `nodejs_*`    | various | Default process metrics (event-loop lag, memory, GC) |
 
-Request metrics come from a global interceptor and are labelled by the **matched
-route template** (never the concrete path), so IDs never become labels and
-cardinality stays bounded. The two **domain gauges are read from PostgreSQL on each
-scrape** (ADR-0002 is authoritative), so they can't drift from the real state. Every
-series is an aggregate count or timing — no PII, no clinical content.
+The two **domain gauges are read from PostgreSQL on each scrape** (ADR-0002 is
+authoritative), so they can't drift from the real state. Every series is an
+aggregate count — no PII, no clinical content.
 
 ```bash
 curl -s http://localhost:${BACKEND_PORT:-3100}/metrics | grep vcp_
@@ -181,8 +169,7 @@ curl -s http://localhost:${BACKEND_PORT:-3100}/metrics | grep vcp_
 
 1. A client calls `POST /consultations` (optionally with `X-Correlation-Id`).
 2. The response comes back carrying `X-Correlation-Id`.
-3. `GET /metrics` shows the request counted in `http_request_duration_seconds` and
-   `vcp_queue_depth` incremented.
+3. `GET /metrics` shows `vcp_queue_depth` incremented.
 4. The structured logs for that request all carry the same `correlationId`.
 5. The admin audit query (`GET /audit?consultationId=…`) shows the resulting rows,
    each with `metadata.correlationId` equal to the response header — the request is

@@ -6,7 +6,7 @@ authorization boundary comes first, then the catalogue and schema.
 
 Related: [authorization matrix](authorization-matrix.md) ·
 [security & privacy](security-privacy.md) · [data model](data-model.md) ·
-[API spec](api-spec.md) · [ADR-0006](adr/0006-authn-authz.md).
+[API spec](api-spec.md) · [ADR-0005](adr/0005-authn-authz.md).
 
 ---
 
@@ -19,13 +19,13 @@ it is **security-relevant**, **state-changing**, or **clinically significant**.
 - **Security-relevant** — authentication outcomes, user management, account status
   changes.
 - **State-changing** — every consultation state transition (request, enqueue, claim,
-  requeue, reassign, start, complete, cancel, finalize) and priority changes.
-- **Clinically significant** — a message was sent, an attachment was uploaded or
-  accessed, a summary was drafted/finalized/amended.
+  requeue, start, complete, cancel, finalize) and priority changes.
+- **Clinically significant** — a message was sent, a summary was drafted or
+  finalized.
 
 The rule is deliberately about **the fact of the action**, never its content: the
-audit log records **who / what / when**, never a message body, attachment bytes, a
-filename, or summary text (invariants 5 & 6).
+audit log records **who / what / when**, never a message body or summary text
+(invariants 5 & 6).
 
 ---
 
@@ -39,7 +39,7 @@ flowchart LR
     role -->|admin| q[AuditService.query]
     q --> proj["projection: id, actorId,<br/>eventType, consultationId,<br/>metadata, createdAt"]
     proj --> db[(audit_logs)]
-    proj -. never joins .-x clinical[(messages · attachments · summaries)]
+    proj -. never joins .-x clinical[(messages · intakes · summaries)]
 ```
 
 Reading the audit log is **admin-only** (FR-15) and is the admin's _one_ legitimate
@@ -53,29 +53,23 @@ an admin can see _that_ a message was sent on a consultation, never _what_ it sa
 
 Defined in `backend/src/audit/audit-events.ts`; metadata is who/what/when only.
 
-| Event                       | Class         | Actor                       | Metadata (no clinical content)                                   |
-| --------------------------- | ------------- | --------------------------- | ---------------------------------------------------------------- |
-| `LOGIN_SUCCESS`             | security      | the user                    | `{ role }`                                                       |
-| `LOGIN_FAILURE`             | security      | user id if known, else none | `{ reason }` — reason code only, never the password/email        |
-| `USER_DEACTIVATED`          | security      | admin                       | `{ targetUserId, targetRole }`                                   |
-| `USER_REACTIVATED`          | security      | admin                       | `{ targetUserId, targetRole }`                                   |
-| `CONSULTATION_REQUESTED`    | state         | patient                     | `{ priority }`                                                   |
-| `CONSULTATION_ENQUEUED`     | state         | patient (system step)       | `{ from, to, priority }`                                         |
-| `CONSULTATION_CLAIMED`      | state         | clinician                   | —                                                                |
-| `CONSULTATION_REQUEUED`     | state         | system                      | `{ reason: 'start_ttl_expired', ttlSeconds, previousClaimedBy }` |
-| `CONSULTATION_REASSIGNED`   | state         | system                      | `{ reason: 'clinician_deactivated', previousClaimedBy }`         |
-| `CONSULTATION_STARTED`      | state         | clinician                   | —                                                                |
-| `CONSULTATION_COMPLETED`    | state         | clinician                   | —                                                                |
-| `CONSULTATION_CANCELLED`    | state         | patient                     | —                                                                |
-| `PRIORITY_CHANGED`          | state         | clinician                   | `{ from, to }`                                                   |
-| `MESSAGE_SENT`              | clinical-sig. | sender                      | `{ senderRole }` — never the body                                |
-| `ATTACHMENT_UPLOADED`       | clinical-sig. | uploader                    | `{ attachmentId, mimeType, sizeBytes }` — never filename/bytes   |
-| `ATTACHMENT_ACCESSED`       | clinical-sig. | viewer                      | `{ attachmentId }`                                               |
-| `ATTACHMENT_DELETED`        | clinical-sig. | patient (uploader)          | `{ attachmentId, mimeType, sizeBytes }` — never filename/bytes   |
-| `SUMMARY_DRAFTED`           | clinical-sig. | clinician                   | —                                                                |
-| `SUMMARY_FINALIZED`         | clinical-sig. | doctor                      | —                                                                |
-| `SUMMARY_CHANGES_REQUESTED` | clinical-sig. | doctor                      | `{ draftedBy }` — never the review note                          |
-| `SUMMARY_ADDENDUM_ADDED`    | clinical-sig. | clinician                   | `{ summaryId }` — never the addendum text                        |
+| Event                    | Class         | Actor                       | Metadata (no clinical content)                                   |
+| ------------------------ | ------------- | --------------------------- | ---------------------------------------------------------------- |
+| `LOGIN_SUCCESS`          | security      | the user                    | `{ role }`                                                       |
+| `LOGIN_FAILURE`          | security      | user id if known, else none | `{ reason }` — reason code only, never the password/email        |
+| `USER_DEACTIVATED`       | security      | admin                       | `{ targetUserId, targetRole }`                                   |
+| `USER_REACTIVATED`       | security      | admin                       | `{ targetUserId, targetRole }`                                   |
+| `CONSULTATION_REQUESTED` | state         | patient                     | `{ priority }`                                                   |
+| `CONSULTATION_ENQUEUED`  | state         | patient (system step)       | `{ from, to, priority }`                                         |
+| `CONSULTATION_CLAIMED`   | state         | clinician                   | —                                                                |
+| `CONSULTATION_REQUEUED`  | state         | system                      | `{ reason: 'start_ttl_expired', ttlSeconds, previousClaimedBy }` |
+| `CONSULTATION_STARTED`   | state         | clinician                   | —                                                                |
+| `CONSULTATION_COMPLETED` | state         | clinician                   | —                                                                |
+| `CONSULTATION_CANCELLED` | state         | patient                     | —                                                                |
+| `PRIORITY_CHANGED`       | state         | clinician                   | `{ from, to }`                                                   |
+| `MESSAGE_SENT`           | clinical-sig. | sender                      | `{ senderRole }` — never the body                                |
+| `SUMMARY_DRAFTED`        | clinical-sig. | clinician                   | —                                                                |
+| `SUMMARY_FINALIZED`      | clinical-sig. | doctor                      | `{ draftedBy }` — who wrote the draft the doctor signed          |
 
 ---
 
@@ -83,17 +77,18 @@ Defined in `backend/src/audit/audit-events.ts`; metadata is who/what/when only.
 
 The `AUDIT_LOG` table ([data-model.md](data-model.md)):
 
-| Column            | Type                              | Notes                                                                                                                     |
-| ----------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `id`              | uuid PK                           |                                                                                                                           |
-| `actor_id`        | uuid, nullable FK → users         | Who performed it; **null for system** events (requeue/reassign) and some failures. `ON DELETE SET NULL` preserves history |
-| `event_type`      | string                            | One of the catalogue above                                                                                                |
-| `consultation_id` | uuid, nullable FK → consultations | The subject consultation, when applicable                                                                                 |
-| `metadata`        | jsonb, nullable                   | Who/what/when context only — **never** clinical content                                                                   |
-| `created_at`      | timestamp                         | When                                                                                                                      |
+| Column            | Type                              | Notes                                                                                                            |
+| ----------------- | --------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `id`              | uuid PK                           |                                                                                                                  |
+| `actor_id`        | uuid, nullable FK → users         | Who performed it; **null for system** events (requeue) and some failures. `ON DELETE SET NULL` preserves history |
+| `event_type`      | string                            | One of the catalogue above                                                                                       |
+| `consultation_id` | uuid, nullable FK → consultations | The subject consultation, when applicable                                                                        |
+| `metadata`        | jsonb, nullable                   | Who/what/when context only — **never** clinical content                                                          |
+| `created_at`      | timestamp                         | When                                                                                                             |
 
-Indexed on `consultation_id`, `actor_id`, and `event_type` to back the filtered
-query. Writes are **append-only** and, for state changes, committed in the **same
+Indexed on `consultation_id`, `actor_id`, `created_at` and
+`(event_type, created_at)` to back the filtered, newest-first query
+([ADR-0017](adr/0017-audit-log-indexing.md)). Writes are **append-only** and, for state changes, committed in the **same
 transaction** as the change they describe (so an audited action never diverges from
 what happened). The audit service accepts a transaction client for exactly this.
 
@@ -121,8 +116,7 @@ params are rejected (`400`) by the global validation pipe. See
 
 - **Reads of clinical content** by legitimate participants are not individually
   audited (a patient re-opening their own messages), to avoid a high-volume,
-  low-value trail — _except_ attachment access, which is audited because a signed
-  URL is a credential worth tracking.
+  low-value trail.
 - **No content, ever.** If an event needs context, it carries a code or an id, not
   the underlying text or bytes — the whole point of the separation-of-duties
   boundary.

@@ -1,6 +1,6 @@
 import { FormEvent, JSX, useCallback, useEffect, useMemo, useState } from 'react';
 import { ApiError, api, AuditEntry, AuditQuery, UserAccount } from '../lib/api';
-import { formatBytes, formatDateTime, formatTime, humanize, shortId } from '../lib/format';
+import { formatDateTime, formatTime, humanize, shortId } from '../lib/format';
 import { useDocumentTitle } from '../lib/hooks';
 
 const PAGE_SIZE = 50;
@@ -15,18 +15,13 @@ const EVENT_TYPES = [
   'CONSULTATION_ENQUEUED',
   'CONSULTATION_CLAIMED',
   'CONSULTATION_REQUEUED',
-  'CONSULTATION_REASSIGNED',
   'CONSULTATION_STARTED',
   'CONSULTATION_COMPLETED',
   'CONSULTATION_CANCELLED',
   'PRIORITY_CHANGED',
   'MESSAGE_SENT',
-  'ATTACHMENT_UPLOADED',
-  'ATTACHMENT_ACCESSED',
   'SUMMARY_DRAFTED',
   'SUMMARY_FINALIZED',
-  'SUMMARY_CHANGES_REQUESTED',
-  'SUMMARY_ADDENDUM_ADDED',
 ];
 
 /** Metadata keys whose value is a user id, shown as that account's email. */
@@ -168,7 +163,7 @@ export default function AdminAudit(): JSX.Element {
     );
   }
 
-  /** One metadata value, readable: emails for user ids, short ids, sizes, labels. */
+  /** One metadata value, readable: emails for user ids, short ids, labels. */
   function metadataValue(key: string, value: unknown): string {
     if (typeof value === 'string') {
       if (USER_ID_KEYS.has(key)) {
@@ -178,9 +173,6 @@ export default function AdminAudit(): JSX.Element {
         return shortId(value);
       }
       return /^[A-Z][A-Z_]+$/.test(value) ? humanize(value) : value;
-    }
-    if (typeof value === 'number' && key === 'sizeBytes') {
-      return formatBytes(value);
     }
     return typeof value === 'object' ? JSON.stringify(value) : String(value);
   }
@@ -195,8 +187,8 @@ export default function AdminAudit(): JSX.Element {
         <div>
           <h1>Audit log</h1>
           <p className="muted">
-            System activity only — who, what, and when. No clinical content (messages, attachments,
-            summaries) is ever shown here (separation of duties).
+            System activity only — who, what, and when. No clinical content (messages or summaries)
+            is ever shown here (separation of duties).
           </p>
         </div>
       </div>

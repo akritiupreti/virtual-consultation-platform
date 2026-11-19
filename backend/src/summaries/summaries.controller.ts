@@ -16,9 +16,7 @@ import { AuthenticatedUser } from '../auth/jwt.strategy';
 import { ActingUser } from '../common/authz/policy';
 import { Roles } from '../common/authz/roles.decorator';
 import { RolesGuard } from '../common/authz/roles.guard';
-import { AddAddendumDto } from './dto/add-addendum.dto';
 import { DraftSummaryDto } from './dto/draft-summary.dto';
-import { RequestSummaryChangesDto } from './dto/request-summary-changes.dto';
 import { SummariesService, SummaryView } from './summaries.service';
 
 function acting(user: AuthenticatedUser): ActingUser {
@@ -48,28 +46,6 @@ export class SummariesController {
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<SummaryView> {
     return this.summaries.finalize(acting(user), id);
-  }
-
-  @Post('request-changes')
-  @HttpCode(HttpStatus.OK)
-  @Roles(Role.DOCTOR)
-  requestChanges(
-    @CurrentUser() user: AuthenticatedUser,
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: RequestSummaryChangesDto,
-  ): Promise<SummaryView> {
-    return this.summaries.requestChanges(acting(user), id, dto);
-  }
-
-  @Post('addendum')
-  @HttpCode(HttpStatus.CREATED)
-  @Roles(Role.NURSE, Role.DOCTOR)
-  addAddendum(
-    @CurrentUser() user: AuthenticatedUser,
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: AddAddendumDto,
-  ): Promise<SummaryView> {
-    return this.summaries.addAddendum(acting(user), id, dto);
   }
 
   @Get()

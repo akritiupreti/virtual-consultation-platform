@@ -16,19 +16,19 @@ interface Row {
   symptomCategory: string | null;
   complaintSummary: string;
   endedAt: string | null;
-  status: 'ready' | 'returned' | 'signed';
+  status: 'ready' | 'signed';
   signedAt: string | null;
   draftedByMe: boolean;
 }
 
 /**
- * A doctor's sign-off worklist (ADR-0020) and their own sign-off history
- * (ADR-0029). **Active** is every ended case with a saved, unfinalized draft —
+ * A doctor's sign-off worklist (ADR-0018) and their own sign-off history
+ * (ADR-0023). **Active** is every ended case with a saved, unfinalized draft —
  * typically nurse-run, so it appears in neither the triage queue nor "My
  * consultations"; each opens the room to review and finalize or return it.
  * **Completed** is the cases this doctor signed off, kept so a final review never
- * disappears once it is done; each opens the signed summary (ADR-0023). Both
- * lists update live for every doctor (ADR-0027).
+ * disappears once it is done; each opens the signed summary (ADR-0020). Both
+ * lists update live for every doctor (ADR-0022).
  */
 export default function PendingSignoff(): JSX.Element {
   const { user } = useAuth();
@@ -64,7 +64,7 @@ export default function PendingSignoff(): JSX.Element {
     symptomCategory: c.symptomCategory,
     complaintSummary: c.complaintSummary,
     endedAt: c.endedAt,
-    status: c.changesRequested ? 'returned' : 'ready',
+    status: 'ready',
     signedAt: null,
     draftedByMe: c.draftedBy === user?.id,
   }));
@@ -173,7 +173,6 @@ export default function PendingSignoff(): JSX.Element {
                       )}
                     </td>
                     <td>
-                      {r.status === 'returned' && <Pill tone="attention">Returned to drafter</Pill>}
                       {r.status === 'ready' && <Pill tone="info">Ready to review</Pill>}
                       {r.status === 'signed' && (
                         <>

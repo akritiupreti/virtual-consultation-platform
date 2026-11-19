@@ -36,6 +36,6 @@ export class ForbiddenActionException extends ForbiddenException {
 /** Attempt to edit a finalized (immutable) summary → 409. */
 export class SummaryFinalizedException extends ConflictException {
   constructor() {
-    super('A finalized summary is immutable; corrections are added as addendums');
+    super('A finalized summary is immutable');
   }
 }

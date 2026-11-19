@@ -10,7 +10,7 @@ module.exports = {
     'src/**/*.(t|j)s',
     '!src/main.ts',
     '!src/prisma/seed.ts',
-    '!src/realtime/redis-io.adapter.ts',
+    '!src/realtime/cors-io.adapter.ts',
   ],
   coverageDirectory: 'coverage',
 };

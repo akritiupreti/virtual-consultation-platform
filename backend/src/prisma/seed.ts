@@ -35,7 +35,7 @@ const canonicalUsers: SeedUser[] = [
   { email: 'admin@vcp.local', role: Role.ADMIN },
 ];
 
-/** Extra dummy accounts for testing lists, queues, and reassignment. */
+/** Extra dummy accounts for testing lists and queues. */
 const dummyUsers: SeedUser[] = [
   // Patients
   { email: 'alice.patient@vcp.local', role: Role.PATIENT },

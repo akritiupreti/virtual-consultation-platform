@@ -1,24 +1,23 @@
 # Data Model
 
-The durable system of record is **PostgreSQL** (via Prisma). Redis holds only
-ephemeral/real-time state (presence, pub/sub, cached positions) — never the source
-of truth. See [ADR-0002](adr/0002-postgresql-system-of-record.md) and
-[ADR-0004](adr/0004-redis-responsibilities.md).
+The durable system of record is **PostgreSQL** (via Prisma), and it is the only data
+store: every piece of state the app relies on lives here. See
+[ADR-0002](adr/0002-postgresql-system-of-record.md).
 
 ## Entity–relationship diagram
 
 ```mermaid
 erDiagram
     USER ||--o{ CONSULTATION : "requests (patient)"
-    USER ||--o{ CONSULTATION : "claims (clinician)"
-    CONSULTATION ||--|| INTAKE : has
+    USER |o--o{ CONSULTATION : "claims (clinician)"
+    CONSULTATION ||--o| INTAKE : has
     CONSULTATION ||--o{ MESSAGE : contains
-    CONSULTATION ||--o{ ATTACHMENT : contains
     CONSULTATION ||--o| SUMMARY : has
-    SUMMARY ||--o{ ADDENDUM : "corrected by"
     USER ||--o{ MESSAGE : sends
-    USER ||--o{ AUDIT_LOG : "acts in"
-    CONSULTATION ||--o{ AUDIT_LOG : "subject of"
+    USER ||--o{ SUMMARY : drafts
+    USER |o--o{ SUMMARY : "finalizes (doctor)"
+    USER |o--o{ AUDIT_LOG : "acts in"
+    CONSULTATION |o--o{ AUDIT_LOG : "subject of"
 
     USER {
         uuid id PK
@@ -35,14 +34,15 @@ erDiagram
         enum state "REQUESTED|QUEUED|CLAIMED|IN_SESSION|ENDED|SUMMARIZED|CANCELLED"
         enum priority "ROUTINE|URGENT|EMERGENCY"
         int version "optimistic lock"
-        timestamp enqueued_at
-        timestamp claimed_at
-        timestamp started_at
-        timestamp ended_at
+        timestamp enqueued_at "nullable"
+        timestamp claimed_at "nullable"
+        timestamp started_at "nullable"
+        timestamp ended_at "nullable"
+        timestamp created_at
     }
     INTAKE {
         uuid id PK
-        uuid consultation_id FK UK
+        uuid consultation_id FK, UK
         string chief_complaint
         string symptom_category
         string onset_duration
@@ -58,31 +58,13 @@ erDiagram
         text body
         timestamp created_at
     }
-    ATTACHMENT {
-        uuid id PK
-        uuid consultation_id FK
-        uuid uploaded_by FK
-        string filename
-        string mime_type
-        int size_bytes
-        string storage_key
-        timestamp created_at
-    }
     SUMMARY {
         uuid id PK
-        uuid consultation_id FK UK
+        uuid consultation_id FK, UK
         uuid drafted_by FK
         uuid finalized_by FK "nullable, DOCTOR"
         text content
         timestamp finalized_at "nullable"
-        timestamp changes_requested_at "nullable"
-        text changes_requested_note "nullable"
-    }
-    ADDENDUM {
-        uuid id PK
-        uuid summary_id FK
-        uuid author_id FK
-        text content
         timestamp created_at
     }
     AUDIT_LOG {
@@ -95,6 +77,10 @@ erDiagram
     }
 ```
 
+How to read it: `||` means "exactly one", `o|` means "zero or one" and `o{` means
+"zero or more". So a consultation belongs to exactly one patient, may or may not be
+claimed by a clinician, and has at most one intake and one summary.
+
 ## Key modeling decisions
 
 - **One role per user** via an enum keeps authorization simple; nurse vs doctor
@@ -102,26 +88,27 @@ erDiagram
 - **Claim concurrency** relies on `state` + `claimed_by` + a `version` column; the
   claim is an atomic conditional `UPDATE` (see [ADR-0003](adr/0003-claim-concurrency.md)).
 - **The queue is derived**, not a separate table: it is the set of `QUEUED`
-  consultations ordered by `priority` then `enqueued_at`. Positions may be cached
-  in Redis for fast reads, but Postgres remains authoritative.
-- **Summary immutability:** a finalized `SUMMARY` is never edited; corrections are
-  appended as `ADDENDUM` rows, preserving an auditable record.
-- **Changes-requested marker:** `changes_requested_at` / `changes_requested_note` are a
-  transient, pre-finalize signal set when a doctor returns a draft for revision and
-  **cleared on the drafter's next save** (ADR-0024/0025). The note is feedback for the
-  drafter, shown in-app only — it is never copied into the audit log (invariant 6).
-- **Attachments** store an **opaque `storage_key`** (a server-generated UUID naming
-  the file in the local object store), never the client filename, and never the bytes
-  in the DB. Access is only via short-lived, user-scoped signed URLs that re-run the
-  authorization matrix ([ADR-0007](adr/0007-attachment-storage.md)); the signed URL
-  is computed, not persisted.
+  consultations ordered by `priority` then `enqueued_at`, and each patient's
+  "N ahead" position is counted from it on demand.
+- **Summary immutability:** once `finalized_at` is set the `SUMMARY` row is never
+  edited again — the signed record stays exactly as the doctor signed it.
+- **Who drafted vs who signed:** `drafted_by` and `finalized_by` are separate columns,
+  so a nurse-drafts → doctor-signs hand-off is recorded on the row itself.
 - **Audit log excludes clinical content:** `metadata` records who/what/when, never
-  message bodies, attachment contents/filenames, or summary text.
+  message bodies or summary text.
 - **Soft deactivation:** `USER.status = DEACTIVATED` (never a hard delete) so
   history and references remain intact.
 
-## Indexing & integrity (to implement in Phase 1)
+## Indexing & integrity
 
-- Partial/composite index on `(state, priority, enqueued_at)` for queue reads.
-- Unique constraint enforcing one `INTAKE` and one `SUMMARY` per consultation.
-- Foreign keys with restrict/soft-delete semantics to preserve history.
+- Composite index on `consultations (state, priority, enqueued_at)` backs the triage
+  queue read; `patient_id` and `claimed_by` are indexed for "my consultations" lists.
+- `messages (consultation_id, created_at)` serves a room's conversation in order.
+- `audit_logs` has `(created_at)` and `(event_type, created_at)` for the admin audit
+  query, plus `consultation_id` and `actor_id` filters
+  ([ADR-0017](adr/0017-audit-log-indexing.md)).
+- Unique constraints enforce one `INTAKE` and one `SUMMARY` per consultation.
+- Foreign keys use `RESTRICT` for people (a user with history cannot be deleted —
+  they are deactivated instead), `CASCADE` from a consultation to its intake,
+  messages and summary, and `SET NULL` on the audit log so audit rows outlive what
+  they describe.

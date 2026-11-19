@@ -11,13 +11,8 @@ const CLINICAL_ACTIONS = [
   Action.VIEW_CONSULTATION,
   Action.SEND_MESSAGE,
   Action.READ_MESSAGES,
-  Action.UPLOAD_ATTACHMENT,
-  Action.VIEW_ATTACHMENT,
-  Action.DELETE_ATTACHMENT,
   Action.DRAFT_SUMMARY,
   Action.FINALIZE_SUMMARY,
-  Action.REQUEST_SUMMARY_CHANGES,
-  Action.ADD_ADDENDUM,
   Action.VIEW_SUMMARY,
 ];
 
@@ -42,13 +37,6 @@ describe('authorization matrix (role dimension)', () => {
     expect(can(Action.FINALIZE_SUMMARY, Role.PATIENT)).toBe(false);
   });
 
-  it('requesting summary changes is doctor-only (ADR-0024)', () => {
-    expect(can(Action.REQUEST_SUMMARY_CHANGES, Role.DOCTOR)).toBe(true);
-    expect(can(Action.REQUEST_SUMMARY_CHANGES, Role.NURSE)).toBe(false);
-    expect(can(Action.REQUEST_SUMMARY_CHANGES, Role.PATIENT)).toBe(false);
-    expect(can(Action.REQUEST_SUMMARY_CHANGES, Role.ADMIN)).toBe(false);
-  });
-
   it('admins can never read clinical content (separation of duties, SC-6)', () => {
     for (const action of CLINICAL_ACTIONS) {
       expect(can(action, Role.ADMIN)).toBe(false);
@@ -69,27 +57,13 @@ describe('authorization matrix (role dimension)', () => {
     }
   });
 
-  it('attachments are participant-clinical: patients + clinicians, never admin', () => {
-    for (const action of [Action.UPLOAD_ATTACHMENT, Action.VIEW_ATTACHMENT]) {
+  it('messaging is participant-clinical: patients + clinicians, never admin', () => {
+    for (const action of [Action.SEND_MESSAGE, Action.READ_MESSAGES]) {
       expect(can(action, Role.PATIENT)).toBe(true);
       expect(can(action, Role.NURSE)).toBe(true);
       expect(can(action, Role.DOCTOR)).toBe(true);
       expect(can(action, Role.ADMIN)).toBe(false);
     }
-  });
-
-  it('only a patient may remove an attachment (their own mistake, ADR-0028)', () => {
-    expect(can(Action.DELETE_ATTACHMENT, Role.PATIENT)).toBe(true);
-    for (const role of [Role.NURSE, Role.DOCTOR, Role.ADMIN]) {
-      expect(can(Action.DELETE_ATTACHMENT, role)).toBe(false);
-    }
-  });
-
-  it('only clinicians may add a summary addendum; patient/admin denied', () => {
-    expect(can(Action.ADD_ADDENDUM, Role.NURSE)).toBe(true);
-    expect(can(Action.ADD_ADDENDUM, Role.DOCTOR)).toBe(true);
-    expect(can(Action.ADD_ADDENDUM, Role.PATIENT)).toBe(false);
-    expect(can(Action.ADD_ADDENDUM, Role.ADMIN)).toBe(false);
   });
 
   it('is deny-by-default for an unknown action', () => {
@@ -140,34 +114,24 @@ describe('authorizeConsultationAction (role → state → ownership composition)
     );
   });
 
-  it('denies an admin viewing an attachment (separation of duties, SC-6/SC-8)', () => {
-    const admin = { id: 'admin-1', role: Role.ADMIN };
+  it('denies a non-participant clinician reading messages (membership-scoped)', () => {
     const inSession = { ...claimedByNurse, state: ConsultationState.IN_SESSION };
-    expect(() => authorizeConsultationAction(admin, inSession, Action.VIEW_ATTACHMENT)).toThrow(
+    expect(() => authorizeConsultationAction(otherNurse, inSession, Action.READ_MESSAGES)).toThrow(
       ForbiddenActionException,
     );
   });
 
-  it('denies a non-participant clinician viewing an attachment (membership-scoped)', () => {
+  it('allows the patient owner and assigned clinician to read messages', () => {
     const inSession = { ...claimedByNurse, state: ConsultationState.IN_SESSION };
     expect(() =>
-      authorizeConsultationAction(otherNurse, inSession, Action.VIEW_ATTACHMENT),
-    ).toThrow(ForbiddenActionException);
-  });
-
-  it('allows the patient owner and assigned clinician to view an attachment', () => {
-    const inSession = { ...claimedByNurse, state: ConsultationState.IN_SESSION };
-    expect(() =>
-      authorizeConsultationAction(patient, inSession, Action.VIEW_ATTACHMENT),
+      authorizeConsultationAction(patient, inSession, Action.READ_MESSAGES),
     ).not.toThrow();
-    expect(() =>
-      authorizeConsultationAction(nurse, inSession, Action.VIEW_ATTACHMENT),
-    ).not.toThrow();
+    expect(() => authorizeConsultationAction(nurse, inSession, Action.READ_MESSAGES)).not.toThrow();
   });
 });
 
 /**
- * Doctor sign-off read window (ADR-0020): FINALIZE_SUMMARY is doctor-only and not
+ * Doctor sign-off read window (ADR-0018): FINALIZE_SUMMARY is doctor-only and not
  * participant-scoped, so a doctor may also READ a case (detail + summary) while it
  * is awaiting sign-off (ENDED), even one a nurse ran and no doctor joined — but
  * nothing wider.
@@ -221,14 +185,14 @@ describe('doctor sign-off read window (PARTICIPANT_OR_SIGNOFF_DOCTOR)', () => {
 });
 
 /**
- * Finalizing doctor keeps read access to the summary they signed (ADR-0023).
+ * Finalizing doctor keeps read access to the summary they signed (ADR-0020).
  * The sign-off read window (above) is scoped to ENDED, so without this a doctor
  * who signs off a nurse-run case — a non-participant — would be locked out of the
  * record the instant they finalize it (ENDED → SUMMARIZED). The grant is keyed to
  * `finalizedBy`, so it is exactly the one signing doctor and nothing wider, and it
  * is carried only for VIEW_SUMMARY — the consultation detail stays membership-scoped.
  */
-describe('finalizing doctor summary read (ADR-0023)', () => {
+describe('finalizing doctor summary read (ADR-0020)', () => {
   const signingDoctor = { id: 'doc-2', role: Role.DOCTOR };
   const otherDoctor = { id: 'doc-3', role: Role.DOCTOR };
   const patient = { id: 'patient-1', role: Role.PATIENT };
@@ -254,7 +218,7 @@ describe('finalizing doctor summary read (ADR-0023)', () => {
 
   it('does not re-open the consultation detail — that stays membership-scoped', () => {
     // VIEW_CONSULTATION never carries `finalizedBy`, so the signing doctor remains
-    // locked out of the intake once the case leaves the sign-off window (ADR-0020).
+    // locked out of the intake once the case leaves the sign-off window (ADR-0018).
     const detailRef = {
       patientId: patient.id,
       claimedBy: 'nurse-1',

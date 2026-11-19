@@ -35,8 +35,6 @@ COPY --from=build /app/backend/package.json ./backend/package.json
 COPY --from=build /app/backend/dist ./backend/dist
 # Schema + migrations are needed at runtime for `prisma migrate deploy`.
 COPY --from=build /app/backend/src/prisma ./backend/src/prisma
-# Local attachment object store (ADR-0007); a named volume is mounted over this.
-RUN mkdir -p /app/backend/var/attachments && chown -R nodejs:nodejs /app/backend/var
 COPY backend/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 USER nodejs

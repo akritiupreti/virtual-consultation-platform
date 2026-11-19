@@ -1,6 +1,5 @@
 // Prisma schema — mirrors docs/data-model.md.
-// PostgreSQL is the durable system of record (ADR-0002); Redis (Phase 3) holds
-// only ephemeral state and never appears here.
+// PostgreSQL is the durable system of record (ADR-0002).
 
 generator client {
   provider = "prisma-client-js"
@@ -50,10 +49,8 @@ model User {
   consultationsAsPatient Consultation[] @relation("PatientConsultations")
   consultationsClaimed   Consultation[] @relation("ClaimedConsultations")
   messages               Message[]
-  attachments            Attachment[]
   summariesDrafted       Summary[]      @relation("SummaryDraftedBy")
   summariesFinalized     Summary[]      @relation("SummaryFinalizedBy")
-  addenda                Addendum[]
   auditLogs              AuditLog[]
 
   @@map("users")
@@ -78,7 +75,6 @@ model Consultation {
 
   intake      Intake?
   messages    Message[]
-  attachments Attachment[]
   summary     Summary?
   auditLogs   AuditLog[]
 
@@ -119,23 +115,6 @@ model Message {
   @@map("messages")
 }
 
-model Attachment {
-  id             String   @id @default(uuid()) @db.Uuid
-  consultationId String   @map("consultation_id") @db.Uuid
-  uploadedBy     String   @map("uploaded_by") @db.Uuid
-  filename       String
-  mimeType       String   @map("mime_type")
-  sizeBytes      Int      @map("size_bytes")
-  storageKey     String   @map("storage_key")
-  createdAt      DateTime @default(now()) @map("created_at")
-
-  consultation Consultation @relation(fields: [consultationId], references: [id], onDelete: Cascade)
-  uploader     User         @relation(fields: [uploadedBy], references: [id], onDelete: Restrict)
-
-  @@index([consultationId])
-  @@map("attachments")
-}
-
 model Summary {
   id             String    @id @default(uuid()) @db.Uuid
   consultationId String    @unique @map("consultation_id") @db.Uuid
@@ -143,36 +122,13 @@ model Summary {
   finalizedBy    String?   @map("finalized_by") @db.Uuid
   content        String
   finalizedAt    DateTime? @map("finalized_at")
-  // A reviewing doctor returned this draft for changes (ADR-0024/0025). Set when
-  // changes are requested, cleared when the drafter next saves — so the drafter has
-  // a durable "please revise" signal, with the note, until they act. The note is
-  // feedback for the drafter only; it never reaches logs or the audit trail
-  // (invariant 6) and is irrelevant once the summary is finalized.
-  changesRequestedAt   DateTime? @map("changes_requested_at")
-  changesRequestedNote String?   @map("changes_requested_note")
   createdAt      DateTime  @default(now()) @map("created_at")
 
   consultation Consultation @relation(fields: [consultationId], references: [id], onDelete: Cascade)
   drafter      User         @relation("SummaryDraftedBy", fields: [draftedBy], references: [id], onDelete: Restrict)
   finalizer    User?        @relation("SummaryFinalizedBy", fields: [finalizedBy], references: [id], onDelete: Restrict)
 
-  addenda Addendum[]
-
   @@map("summaries")
-}
-
-model Addendum {
-  id        String   @id @default(uuid()) @db.Uuid
-  summaryId String   @map("summary_id") @db.Uuid
-  authorId  String   @map("author_id") @db.Uuid
-  content   String
-  createdAt DateTime @default(now()) @map("created_at")
-
-  summary Summary @relation(fields: [summaryId], references: [id], onDelete: Cascade)
-  author  User    @relation(fields: [authorId], references: [id], onDelete: Restrict)
-
-  @@index([summaryId])
-  @@map("addenda")
 }
 
 model AuditLog {
@@ -180,7 +136,7 @@ model AuditLog {
   actorId        String?  @map("actor_id") @db.Uuid
   eventType      String   @map("event_type")
   consultationId String?  @map("consultation_id") @db.Uuid
-  // Who/what/when only — never message bodies, attachments, or summary text.
+  // Who/what/when only — never message bodies or summary text.
   metadata       Json?
   createdAt      DateTime @default(now()) @map("created_at")
 
@@ -192,7 +148,7 @@ model AuditLog {
   // The admin audit query always orders by createdAt DESC (FR-15). The unfiltered
   // "latest events" view scanned the whole table before this index; the composite
   // serves the eventType filter AND its ordering in one index scan, replacing the
-  // bare eventType index (ADR-0019).
+  // bare eventType index (ADR-0017).
   @@index([createdAt])
   @@index([eventType, createdAt])
   @@map("audit_logs")

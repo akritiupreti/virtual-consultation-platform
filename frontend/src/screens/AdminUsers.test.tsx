@@ -48,12 +48,26 @@ describe('AdminUsers screen', () => {
     const { user, findByRole, findByText } = render();
     await user.click(await findByRole('button', { name: /^deactivate$/i }));
     expect(mock.deactivateUser).not.toHaveBeenCalled();
-    // Clinicians' claimed cases return to the queue — the admin is told before confirming.
+    // The admin is told the live-session rule (and, for a clinician, what happens to
+    // claimed cases) before confirming.
     const dialog = await findByRole('alertdialog');
-    expect(dialog).toHaveTextContent(/return to the queue/i);
+    expect(dialog).toHaveTextContent(/cannot be deactivated until it ends/i);
+    expect(dialog).toHaveTextContent(/return to the queue automatically/i);
     await user.click(within(dialog).getByRole('button', { name: /deactivate account/i }));
     expect(mock.deactivateUser).toHaveBeenCalledWith('u-nurse');
     expect(await findByText(/is now deactivated/i)).toBeInTheDocument();
+  });
+
+  it('explains when the user cannot be deactivated because they are in a session', async () => {
+    const { ApiError } = await import('../lib/api');
+    mock.deactivateUser.mockRejectedValue(
+      new ApiError(409, 'This user is in an active consultation session; try again after it ends'),
+    );
+    const { user, findByRole, findByText } = render();
+    await user.click(await findByRole('button', { name: /^deactivate$/i }));
+    const dialog = await findByRole('alertdialog');
+    await user.click(within(dialog).getByRole('button', { name: /deactivate account/i }));
+    expect(await findByText(/try again after it ends/i)).toBeInTheDocument();
   });
 
   it('reactivates a deactivated user', async () => {

@@ -79,34 +79,6 @@ describe('MyConsultations (clinician)', () => {
     expect(await findByText('Start the session')).toBeInTheDocument();
   });
 
-  it('flags a case a doctor returned for changes with a badge (ADR-0025)', async () => {
-    mock.getAssigned.mockResolvedValue([
-      {
-        ...fixtures.assignedConsultations[1],
-        id: 'c-9',
-        state: 'ENDED',
-        summaryFinalized: false,
-        summaryChangesRequested: true,
-      },
-    ]);
-    const { findByText } = render();
-    expect(await findByText(/changes requested/i)).toBeInTheDocument();
-  });
-
-  it('does not show the changes-requested badge once the summary is finalized', async () => {
-    mock.getAssigned.mockResolvedValue([
-      {
-        ...fixtures.assignedConsultations[0],
-        summaryFinalized: true,
-        summaryChangesRequested: true,
-      },
-    ]);
-    const { user, findByRole, getByRole, queryByText } = render();
-    await user.click(await findByRole('button', { name: /^all/i }));
-    expect(getByRole('link', { name: /open room/i })).toBeInTheDocument();
-    expect(queryByText(/changes requested/i)).not.toBeInTheDocument();
-  });
-
   it('shows an empty state when the clinician has no assigned cases', async () => {
     mock.getAssigned.mockResolvedValue([]);
     const { findByText } = render();

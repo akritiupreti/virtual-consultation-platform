@@ -3,7 +3,7 @@ import { openScreen, SCREENS } from './harness';
 
 /**
  * Visual-regression baselines for the four critical screens only (C25 /
- * ADR-0018). Baselines are committed under tests/e2e/__screenshots__ and MUST
+ * ADR-0016). Baselines are committed under tests/e2e/__screenshots__ and MUST
  * be generated in the pinned Playwright Linux container so CI matches — see
  * docs/testing-strategy.md. A diff above the configured tolerance fails the job.
  */

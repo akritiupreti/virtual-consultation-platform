@@ -1,13 +1,13 @@
 import { defineConfig, devices } from '@playwright/test';
 
 /**
- * Browser tier for the four critical screens (ADR-0017 / ADR-0018):
+ * Browser tier for the four critical screens (ADR-0015 / ADR-0016):
  *   - a11y.spec.ts  — @axe-core/playwright WCAG 2.1 AA scan incl. real contrast
  *   - visual.spec.ts — pixel screenshots compared to committed baselines
  *
  * The app is served as a static production build (vite preview) and the backend
  * is fully stubbed via page.route in the harness, so these are deterministic and
- * need no Postgres/Redis.
+ * need no Postgres.
  *
  * Snapshot determinism (the known cross-platform footgun): font hinting and
  * anti-aliasing differ per OS, so baselines are PINNED to the Playwright Linux

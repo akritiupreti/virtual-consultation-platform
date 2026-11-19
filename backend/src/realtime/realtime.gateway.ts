@@ -2,7 +2,6 @@ import { Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import {
   OnGatewayConnection,
-  OnGatewayDisconnect,
   OnGatewayInit,
   SubscribeMessage,
   WebSocketGateway,
@@ -17,14 +16,12 @@ import { CorrelationService } from '../common/correlation/correlation.service';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   consultationRoom,
-  PresenceUpdatedPayload,
   QUEUE_ROOM,
   SIGNOFF_ROOM,
   SubscriptionAck,
   userRoom,
   WS_EVENTS,
 } from './events';
-import { PresenceService } from './presence.service';
 import { RealtimeService } from './realtime.service';
 
 interface JwtPayload {
@@ -34,7 +31,7 @@ interface JwtPayload {
 }
 
 /**
- * WebSocket gateway for the triage queue and consultation rooms (ADR-0005/0009).
+ * WebSocket gateway for the triage queue and consultation rooms (ADR-0004/0007).
  *
  * Authorization holds over WebSockets exactly as it does over REST (invariants
  * 3 & 4): the JWT is verified on the handshake; subscribing to the queue is
@@ -44,7 +41,7 @@ interface JwtPayload {
  * loaded, not in this decorator.
  */
 @WebSocketGateway()
-export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect {
+export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection {
   private readonly log = new Logger(RealtimeGateway.name);
 
   @WebSocketServer()
@@ -53,7 +50,6 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
   constructor(
     private readonly jwt: JwtService,
     private readonly prisma: PrismaService,
-    private readonly presence: PresenceService,
     private readonly realtime: RealtimeService,
     private readonly correlation: CorrelationService,
   ) {}
@@ -118,24 +114,12 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
       // Every user joins their personal room for position/state updates.
       await client.join(userRoom(user.id));
       // Doctors also join the sign-off room: any doctor may sign off a case that
-      // is awaiting it (ADR-0020), so the worklist reconciles live for all of
-      // them (ADR-0027). Content-free signals only; role comes from the verified JWT.
+      // is awaiting it (ADR-0018), so the worklist reconciles live for all of
+      // them (ADR-0022). Content-free signals only; role comes from the verified JWT.
       if (user.role === Role.DOCTOR) {
         await client.join(SIGNOFF_ROOM);
       }
-      await this.presence.markConnected(user.id);
     });
-  }
-
-  async handleDisconnect(client: Socket): Promise<void> {
-    const user = client.data.user as ActingUser | undefined;
-    if (!user) {
-      return;
-    }
-    await this.presence.markDisconnected(user.id);
-    // Refresh presence for any consultation rooms this socket was a member of.
-    const rooms = [...client.rooms].filter((r) => r.startsWith('consultation:'));
-    await Promise.all(rooms.map((room) => this.emitPresence(room.slice('consultation:'.length))));
   }
 
   /** Clinicians subscribe to the live triage queue (matrix: VIEW_QUEUE). */
@@ -186,7 +170,6 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
       }
 
       await client.join(consultationRoom(id));
-      await this.emitPresence(id);
       return { ok: true };
     });
   }
@@ -201,7 +184,6 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
       return { ok: false, error: 'bad_request' };
     }
     await client.leave(consultationRoom(id));
-    await this.emitPresence(id);
     return { ok: true };
   }
 
@@ -219,24 +201,5 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
     } catch {
       return null;
     }
-  }
-
-  /** Emit the current online status of a consultation's participants to its room. */
-  private async emitPresence(consultationId: string): Promise<void> {
-    const consultation = await this.prisma.consultation.findUnique({
-      where: { id: consultationId },
-      select: { patientId: true, claimedBy: true },
-    });
-    if (!consultation) {
-      return;
-    }
-    const ids = [consultation.patientId, consultation.claimedBy].filter(
-      (v): v is string => typeof v === 'string',
-    );
-    const participants = await Promise.all(
-      ids.map(async (userId) => ({ userId, online: await this.presence.isOnline(userId) })),
-    );
-    const payload: PresenceUpdatedPayload = { consultationId, participants };
-    this.server.to(consultationRoom(consultationId)).emit(WS_EVENTS.PRESENCE_UPDATED, payload);
   }
 }

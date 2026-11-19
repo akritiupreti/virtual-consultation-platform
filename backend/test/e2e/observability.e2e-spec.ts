@@ -8,8 +8,8 @@ import { createTestApp, createUser, login, resetDb } from './helpers';
  * Phase 5 observability (NFR-5 / SC-15):
  * - CS-16: a request is traceable end-to-end by correlation ID — echoed on the
  *   response header and stamped on the audit rows the request produced.
- * - CS-17: readiness reflects real dependencies (PostgreSQL gates; Redis does not).
- * - Metrics endpoint exposes the request + domain series (ADR-0014).
+ * - CS-17: readiness reflects its real dependency (PostgreSQL gates it).
+ * - Metrics endpoint exposes the request + domain series (ADR-0012).
  */
 describe('Observability (e2e)', () => {
   let app: INestApplication;
@@ -96,18 +96,13 @@ describe('Observability (e2e)', () => {
       const res = await request(server).get('/ready').expect(200);
       expect(res.body.status).toBe('ok');
       expect(res.body.info.postgres.status).toBe('up');
-      // Redis is present (info) but never gates readiness — its status may be
-      // up/disabled/degraded depending on the environment.
-      expect(res.body.info.redis).toBeDefined();
     });
   });
 
-  describe('metrics endpoint (ADR-0014)', () => {
-    it('exposes request and domain series in Prometheus format', async () => {
-      // Make at least one request so the histogram has a sample.
-      await request(server).get('/health').expect(200);
+  describe('metrics endpoint (ADR-0012)', () => {
+    it('exposes process and domain series in Prometheus format', async () => {
       const res = await request(server).get('/metrics').expect(200);
-      expect(res.text).toContain('http_request_duration_seconds');
+      expect(res.text).toContain('process_cpu_user_seconds_total');
       expect(res.text).toContain('vcp_queue_depth');
       expect(res.text).toContain('vcp_active_consultations');
     });

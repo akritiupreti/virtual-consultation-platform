@@ -3,7 +3,7 @@ import { cleanup } from '@testing-library/react';
 import { toHaveNoViolations } from 'jest-axe';
 import { afterEach, expect } from 'vitest';
 
-// Wire the axe matcher (ADR-0017) into Vitest's expect. jest-axe is framework-
+// Wire the axe matcher (ADR-0015) into Vitest's expect. jest-axe is framework-
 // agnostic — it only needs expect.extend — so it works unchanged under Vitest.
 expect.extend(toHaveNoViolations);
 

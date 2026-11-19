@@ -19,7 +19,7 @@ const DEFAULT_SWEEP_INTERVAL_SECONDS = 15;
 const REQUEUE_TRANSITION = transitionFor(REQUEUE)!;
 
 /**
- * Claim-start TTL (FR-12 / SC-4, ADR-0010). A case that is CLAIMED but not
+ * Claim-start TTL (FR-12 / SC-4, ADR-0008). A case that is CLAIMED but not
  * started within the TTL is auto-requeued: a DB-authoritative sweeper finds
  * overdue claims and requeues each with the same atomic conditional UPDATE the
  * claim uses, so a race with a legitimate start resolves in the database and

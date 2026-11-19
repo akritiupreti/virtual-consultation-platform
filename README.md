@@ -28,11 +28,11 @@ flowchart LR
 
 ## Roles
 
-| Role                         | Can do                                                                                                             | Cannot do                                                      |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------- |
-| **Patient**                  | Register, submit request, see queue position, join their consultation room, chat + attachments, read their summary | See other patients, see the triage queue                       |
-| **Clinician** (nurse/doctor) | See triage queue, claim a case, start/run/complete a consultation, draft summary; **doctors** finalize summaries   | Act outside their role/state; nurses cannot finalize summaries |
-| **Admin**                    | Manage users, deactivate accounts, read audit log                                                                  | **Read clinical consultation content** (separation of duties)  |
+| Role                         | Can do                                                                                                           | Cannot do                                                      |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| **Patient**                  | Register, submit request, see queue position, join their consultation room, chat live, read their summary        | See other patients, see the triage queue                       |
+| **Clinician** (nurse/doctor) | See triage queue, claim a case, start/run/complete a consultation, draft summary; **doctors** finalize summaries | Act outside their role/state; nurses cannot finalize summaries |
+| **Admin**                    | Manage users, deactivate accounts, read audit log                                                                | **Read clinical consultation content** (separation of duties)  |
 
 ## Consultation lifecycle
 
@@ -90,7 +90,7 @@ Rules the system upholds (enforced server-side, not left to the UI):
 Requires **Docker Desktop** running and a root `.env` (copy from `.env.example`).
 
 ```bash
-docker compose up -d --build        # Postgres + Redis + backend (auto-migrates) + frontend
+docker compose up -d --build        # Postgres + backend (auto-migrates) + frontend
 npm install                         # once, for the host-run seed + tests
 npm run prisma:generate --workspace backend  # once, generates the DB client the seed imports
 npm run seed --workspace backend    # demo users + sample consultations (idempotent)
@@ -123,7 +123,7 @@ Run the tests:
 ```bash
 npm test                                   # backend + frontend unit
 npm run test:cov --workspace frontend      # frontend coverage + a11y + contrast
-# backend e2e / merged coverage need the test DB + Redis — see docs/testing-strategy.md
+# backend e2e / merged coverage need the test DB — see docs/testing-strategy.md
 ```
 
 ## Documentation

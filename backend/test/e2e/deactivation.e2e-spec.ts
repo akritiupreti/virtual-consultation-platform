@@ -1,5 +1,5 @@
 import { INestApplication } from '@nestjs/common';
-import { ConsultationState, Role, UserStatus } from '@prisma/client';
+import { Role, UserStatus } from '@prisma/client';
 import request from 'supertest';
 import { AUDIT_EVENTS } from '../../src/audit/audit-events';
 import { PrismaService } from '../../src/prisma/prisma.service';
@@ -7,9 +7,9 @@ import { createTestApp, createUser, login, resetDb } from './helpers';
 
 /**
  * FR-23/24/25 (C12): account deactivation is a soft state change. A deactivated
- * user cannot log in and any already-issued token stops working; a clinician
- * deactivated mid-session has their active case paused and requeued (reassigned),
- * and every step is audited. Reactivation restores access.
+ * user cannot log in and any already-issued token stops working. A user who is in
+ * an active session cannot be deactivated until it ends (FR-24). Every step is
+ * audited, and reactivation restores access.
  */
 describe('Account deactivation lifecycle (e2e)', () => {
   let app: INestApplication;
@@ -61,7 +61,7 @@ describe('Account deactivation lifecycle (e2e)', () => {
       .expect(401);
   });
 
-  it('reassigns a clinician’s in-session case when they are deactivated mid-session', async () => {
+  it('refuses to deactivate either participant while their session is active', async () => {
     const patientToken = await login(app, 'patient@test.local');
     const nurseToken = await login(app, 'nurse@test.local');
 
@@ -87,27 +87,32 @@ describe('Account deactivation lifecycle (e2e)', () => {
       .set('Authorization', bearer(nurseToken))
       .expect(200);
 
-    const res = await request(server)
+    // Mid-session: neither the clinician nor the patient can be deactivated.
+    for (const id of [nurseId, patientId]) {
+      await request(server)
+        .post(`/users/${id}/deactivate`)
+        .set('Authorization', bearer(adminToken))
+        .expect(409);
+    }
+    // Nothing changed and nothing was audited as a deactivation.
+    const nurse = await prisma.user.findUniqueOrThrow({ where: { id: nurseId } });
+    expect(nurse.status).toBe(UserStatus.ACTIVE);
+    expect(
+      await prisma.auditLog.count({ where: { eventType: AUDIT_EVENTS.USER_DEACTIVATED } }),
+    ).toBe(0);
+
+    // Once the session ends, the clinician can be deactivated and can no longer act.
+    await request(server)
+      .post(`/consultations/${consultationId}/complete`)
+      .set('Authorization', bearer(nurseToken))
+      .expect(200);
+    await request(server)
       .post(`/users/${nurseId}/deactivate`)
       .set('Authorization', bearer(adminToken))
       .expect(200);
-    expect(res.body.reassignedConsultationIds).toContain(consultationId);
-
-    // The case is back in the queue, unassigned, and startedAt cleared.
-    const after = await prisma.consultation.findUniqueOrThrow({ where: { id: consultationId } });
-    expect(after.state).toBe(ConsultationState.QUEUED);
-    expect(after.claimedBy).toBeNull();
-    expect(after.startedAt).toBeNull();
-
-    // Both the user-management and the reassignment are audited (who/what/when only).
-    const events = await prisma.auditLog.findMany({ where: { consultationId } });
-    expect(events.map((e) => e.eventType)).toContain(AUDIT_EVENTS.CONSULTATION_REASSIGNED);
-    const userEvents = await prisma.auditLog.findMany({
-      where: { eventType: AUDIT_EVENTS.USER_DEACTIVATED },
-    });
-    expect(userEvents).toHaveLength(1);
-
-    // The deactivated clinician can no longer act.
+    expect(
+      await prisma.auditLog.count({ where: { eventType: AUDIT_EVENTS.USER_DEACTIVATED } }),
+    ).toBe(1);
     await request(server).get('/auth/me').set('Authorization', bearer(nurseToken)).expect(401);
   });
 

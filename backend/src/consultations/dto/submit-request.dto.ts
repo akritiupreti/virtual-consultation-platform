@@ -28,7 +28,7 @@ export const SYMPTOM_CATEGORIES = [
 /**
  * Patient intake (docs/requirements.md "Intake schema"). Required: chief
  * complaint, symptom category, onset/duration, severity, explicit consent.
- * Optional: priority suggestion, history, medications. Attachments are Phase 4.
+ * Optional: priority suggestion, history, medications.
  */
 export class SubmitRequestDto {
   @IsString()

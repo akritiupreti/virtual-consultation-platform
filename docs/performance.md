@@ -7,13 +7,12 @@ the changes the query plans justified were made. This document is **diagram-firs
 the picture maps each hot read to the index that serves it; the evidence and the
 "considered and rejected" calls follow.
 
-Decisions: [ADR-0019 audit-log query indexing](adr/0019-audit-log-indexing.md).
+Decisions: [ADR-0017 audit-log query indexing](adr/0017-audit-log-indexing.md).
 Related: [data model](data-model.md) · [architecture](architecture.md) ·
-[observability](observability.md) (the `vcp_queue_depth` / request-latency metrics).
+[observability](observability.md) (the `vcp_queue_depth` / `vcp_active_consultations` metrics).
 
-> **Invariants held throughout.** PostgreSQL stays authoritative (ADR-0002); Redis
-> stays a non-authoritative cache that degrades gracefully (ADR-0004); no PII or
-> clinical content entered any index, log or URL (invariant 6).
+> **Invariants held throughout.** PostgreSQL stays authoritative (ADR-0002); no PII
+> or clinical content entered any index, log or URL (invariant 6).
 
 ---
 
@@ -55,7 +54,7 @@ flowchart LR
 ```
 
 The two green indexes are the only schema change this phase
-([ADR-0019](adr/0019-audit-log-indexing.md)). Everything else was already served
+([ADR-0017](adr/0017-audit-log-indexing.md)). Everything else was already served
 by an existing index and was left alone.
 
 ---
@@ -128,21 +127,20 @@ kept alongside it (no redundant index on the write path — see §4).
 ### 3.3 `getMine` had an N+1 position lookup ✅ fixed (code)
 
 `getMine` fetched a patient's consultations in one query, then called `positionOf`
-**once per queued row** — a cache lookup, or a `COUNT` per row when the cache missed
-or Redis was down. The per-row DB query itself is well-indexed (0.1 ms), but the
-_shape_ is a classic N+1:
+**once per queued row** — a `COUNT` per row. The per-row DB query itself is
+well-indexed (0.1 ms), but the _shape_ is a classic N+1:
 
-- **Before:** `1 + N` queries (N = the patient's queued cases). On the Redis-down
-  degrade path those N were each a Postgres `COUNT`.
+- **Before:** `1 + N` queries (N = the patient's queued cases), each extra one a
+  Postgres `COUNT`.
 - **After:** the queued positions are read **once**, in serving order, and mapped by
-  id — so `getMine` issues **at most 2 queries regardless of N**, and the
-  Redis-down path is bounded to one authoritative read ([consultations.service.ts](../backend/src/consultations/consultations.service.ts)).
+  id — so `getMine` issues **at most 2 queries regardless of N**
+  ([consultations.service.ts](../backend/src/consultations/consultations.service.ts)).
 
 N is small in practice (a patient rarely holds more than one queued case), so this is
-a **robustness** fix, not a hot-loop rescue — it keeps the degrade path from fanning
-out into per-row queries. The Redis position cache (ADR-0004) is unchanged and still
-serves the high-frequency WebSocket `position:updated` push and the single-row submit
-view via `positionOf`.
+a **robustness** fix, not a hot-loop rescue — it keeps the list from fanning out into
+per-row queries. The single-row submit view still uses `positionOf` (one `COUNT`),
+and the WebSocket `position:updated` push recomputes every position from one ordered
+read of the queue.
 
 ---
 

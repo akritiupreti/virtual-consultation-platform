@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test';
 import { openScreen, SCREENS } from './harness';
 
 /**
- * WCAG 2.1 AA scan of the four critical screens in a real browser (ADR-0017).
+ * WCAG 2.1 AA scan of the four critical screens in a real browser (ADR-0015).
  * This complements the fast jsdom `vitest-axe` checks by catching what jsdom
  * cannot: computed colour contrast against the rendered layout. Keyboard focus
  * order is smoke-checked here too; the detailed keyboard assertions live in the

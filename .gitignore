@@ -19,7 +19,7 @@ coverage/
 .next/
 out/
 
-# Local attachment object store (ADR-0007) — never commit uploaded files
+# Local runtime data — never commit
 var/
 backend/var/
 

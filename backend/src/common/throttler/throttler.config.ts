@@ -3,15 +3,11 @@ import { Throttle } from '@nestjs/throttler';
 import { ThrottlerModuleOptions } from '@nestjs/throttler';
 
 /**
- * Rate-limit configuration (ADR-0011). App-level throttling protects the auth and
- * upload surfaces from brute-force and abuse. A single global throttler sets a
- * generous default; stricter per-route limits are applied via the decorators below,
- * which override the default throttler for that handler.
- *
- * Storage is the throttler's in-memory store by default; the documented scale-out
- * path is a Redis-backed store (ADR-0004 lists rate limiting as a Redis
- * responsibility), degrading to per-instance limits when Redis is absent — the same
- * stance as the socket adapter and presence.
+ * Rate-limit configuration (ADR-0009). App-level throttling protects the auth
+ * surface from brute-force and abuse. A single global throttler sets a generous
+ * default; a stricter per-route limit is applied via the decorator below, which
+ * overrides the default throttler for that handler. Counters live in the
+ * throttler's in-memory store.
  */
 function intOr(raw: unknown, fallback: number): number {
   const value = Number(raw);
@@ -33,10 +29,4 @@ export function buildThrottlerOptions(config: ConfigService): ThrottlerModuleOpt
 export const AuthThrottle = (): MethodDecorator & ClassDecorator =>
   Throttle({
     default: { ttl: TTL_MS, limit: intOr(process.env.AUTH_THROTTLE_LIMIT, 10) * TEST_SCALE },
-  });
-
-/** Stricter limit for attachment uploads. */
-export const UploadThrottle = (): MethodDecorator & ClassDecorator =>
-  Throttle({
-    default: { ttl: TTL_MS, limit: intOr(process.env.UPLOAD_THROTTLE_LIMIT, 30) * TEST_SCALE },
   });

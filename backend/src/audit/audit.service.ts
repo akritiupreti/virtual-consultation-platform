@@ -62,7 +62,7 @@ export class AuditService {
    * Admin-only, filterable, paginated read of the audit trail (FR-15, most recent
    * first). Filters compose (actor AND event type AND consultation AND time range).
    * The projection is who/what/when only — it never joins to or returns message
-   * bodies, attachment contents, or summary text (invariant 3; SC-6).
+   * bodies or summary text (invariant 3; SC-6).
    */
   async query(filters: AuditQuery = {}): Promise<AuditPage> {
     const limit = clamp(filters.limit ?? 50, 1, 200);

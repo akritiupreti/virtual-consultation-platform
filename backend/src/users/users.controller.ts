@@ -6,7 +6,7 @@ import { AuthenticatedUser } from '../auth/jwt.strategy';
 import { ActingUser } from '../common/authz/policy';
 import { Roles } from '../common/authz/roles.decorator';
 import { RolesGuard } from '../common/authz/roles.guard';
-import { DeactivationResult, UserView, UsersService } from './users.service';
+import { UserView, UsersService } from './users.service';
 
 function acting(user: AuthenticatedUser): ActingUser {
   return { id: user.id, role: user.role as Role };
@@ -32,7 +32,7 @@ export class UsersController {
   deactivate(
     @CurrentUser() user: AuthenticatedUser,
     @Param('id', ParseUUIDPipe) id: string,
-  ): Promise<DeactivationResult> {
+  ): Promise<UserView> {
     return this.users.deactivate(acting(user), id);
   }
 

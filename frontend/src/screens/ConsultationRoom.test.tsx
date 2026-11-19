@@ -11,22 +11,18 @@ const mock = vi.hoisted(() => ({
   getConsultation: vi.fn(),
   getMessages: vi.fn(),
   getSummary: vi.fn(),
-  getAttachments: vi.fn(),
-  uploadAttachment: vi.fn(),
-  deleteAttachment: vi.fn(),
   sendMessage: vi.fn(),
   start: vi.fn(),
   complete: vi.fn(),
   finalizeSummary: vi.fn(),
   draftSummary: vi.fn(),
-  requestSummaryChanges: vi.fn(),
 }));
 vi.mock('../lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../lib/api')>();
   return { ...actual, api: { ...actual.api, ...mock } };
 });
 
-// Capture the live summary handler so a test can play a server signal (ADR-0027).
+// Capture the live summary handler so a test can play a server signal (ADR-0022).
 const live = vi.hoisted(() => ({ summary: null as null | ((p: SummaryUpdated) => void) }));
 vi.mock('../lib/realtime', () => ({
   useConsultationRoom: () => undefined,
@@ -51,15 +47,11 @@ describe('ConsultationRoom screen', () => {
     mock.getConsultation.mockReset().mockResolvedValue(fixtures.consultation());
     mock.getMessages.mockReset().mockResolvedValue(fixtures.messages);
     mock.getSummary.mockReset().mockResolvedValue(fixtures.summary({ finalized: false }));
-    mock.getAttachments.mockReset().mockResolvedValue([]);
-    mock.uploadAttachment.mockReset();
-    mock.deleteAttachment.mockReset().mockResolvedValue(undefined);
     mock.sendMessage.mockReset().mockResolvedValue(fixtures.messages[1]);
     mock.start.mockReset().mockResolvedValue(fixtures.consultation());
     mock.complete.mockReset().mockResolvedValue(fixtures.consultation({ state: 'ENDED' }));
     mock.finalizeSummary.mockReset();
     mock.draftSummary.mockReset();
-    mock.requestSummaryChanges.mockReset();
   });
 
   it('renders intake, state and messages with sender labels', async () => {
@@ -87,7 +79,7 @@ describe('ConsultationRoom screen', () => {
     expect(mock.start).toHaveBeenCalledWith('c-1');
   });
 
-  it('saves the summary draft only when the clinician clicks Save (ADR-0026)', async () => {
+  it('saves the summary draft only when the clinician clicks Save (ADR-0021)', async () => {
     const { user, findByLabelText, getByRole, findByText } = render(fixtures.users.doctor);
     const draft = await findByLabelText(/summary draft/i);
     await waitFor(() => expect(draft).toHaveValue('Synthetic summary content for testing only.'));
@@ -183,7 +175,7 @@ describe('ConsultationRoom screen', () => {
     expect(mock.finalizeSummary).toHaveBeenCalledWith('c-1');
   });
 
-  it('shows the reviewing doctor a revision the drafter saves, live (ADR-0027)', async () => {
+  it('shows the reviewing doctor a revision the drafter saves, live (ADR-0022)', async () => {
     mock.getConsultation.mockResolvedValue(nurseRunEnded());
     mock.getSummary.mockResolvedValue(
       fixtures.summary({ finalized: false, content: 'First draft' }),
@@ -200,31 +192,6 @@ describe('ConsultationRoom screen', () => {
     expect(await findByText(/the drafter saved a revision/i)).toBeInTheDocument();
   });
 
-  it('shows the drafting nurse a change request the moment it is made (ADR-0025/0027)', async () => {
-    mock.getConsultation.mockResolvedValue(nurseRunEnded());
-    mock.getSummary.mockResolvedValue(
-      fixtures.summary({ finalized: false, content: 'Likely viral URTI.', draftedBy: 'u-nurse' }),
-    );
-    const { findByText, queryByText, findByRole } = render(fixtures.users.nurse);
-    await findByRole('button', { name: /save draft/i });
-    expect(queryByText(/asked you to revise/i)).not.toBeInTheDocument();
-
-    mock.getSummary.mockResolvedValue(
-      fixtures.summary({
-        finalized: false,
-        content: 'Likely viral URTI.',
-        draftedBy: 'u-nurse',
-        changesRequestedAt: '2026-10-22T09:25:00.000Z',
-        changesRequestedNote: 'Please add the BP reading.',
-      }),
-    );
-    await act(async () => live.summary?.({ consultationId: 'c-1', reason: 'changes_requested' }));
-
-    expect(await findByText(/a doctor asked you to revise this summary/i)).toBeInTheDocument();
-    expect(await findByText(/please add the bp reading/i)).toBeInTheDocument();
-    expect(await findByRole('button', { name: /save revision/i })).toBeInTheDocument();
-  });
-
   it('never overwrites text the drafter is still editing when a signal arrives', async () => {
     mock.getConsultation.mockResolvedValue(nurseRunEnded());
     mock.getSummary.mockResolvedValue(fixtures.summary({ finalized: false, content: 'Saved' }));
@@ -233,7 +200,7 @@ describe('ConsultationRoom screen', () => {
     await waitFor(() => expect(draft).toHaveValue('Saved'));
     await user.type(draft, ' and typing');
 
-    await act(async () => live.summary?.({ consultationId: 'c-1', reason: 'changes_requested' }));
+    await act(async () => live.summary?.({ consultationId: 'c-1', reason: 'drafted' }));
     expect(draft).toHaveValue('Saved and typing');
   });
 
@@ -243,31 +210,6 @@ describe('ConsultationRoom screen', () => {
     const calls = mock.getSummary.mock.calls.length;
     await act(async () => live.summary?.({ consultationId: 'other', reason: 'drafted' }));
     expect(mock.getSummary.mock.calls.length).toBe(calls);
-  });
-
-  it('lets a reviewing doctor return a nurse-run draft for changes with a note (ADR-0024)', async () => {
-    mock.getConsultation.mockResolvedValue(nurseRunEnded());
-    mock.getSummary.mockResolvedValueOnce(
-      fixtures.summary({ finalized: false, content: 'Nurse-authored draft' }),
-    );
-    mock.getSummary.mockResolvedValue(
-      fixtures.summary({
-        finalized: false,
-        content: 'Nurse-authored draft',
-        changesRequestedAt: '2026-10-22T09:25:00.000Z',
-        changesRequestedNote: 'Please add the BP reading.',
-      }),
-    );
-    mock.requestSummaryChanges.mockResolvedValue(fixtures.summary({ finalized: false }));
-    const { user, findByLabelText, getByRole, findByText } = render(fixtures.users.doctor);
-
-    await user.type(await findByLabelText(/note for the drafter/i), 'Please add the BP reading.');
-    await user.click(getByRole('button', { name: /request changes/i }));
-
-    expect(mock.requestSummaryChanges).toHaveBeenCalledWith('c-1', 'Please add the BP reading.');
-    expect(await findByText(/returned to the drafter for changes/i)).toBeInTheDocument();
-    // Requesting changes must not finalize the summary.
-    expect(mock.finalizeSummary).not.toHaveBeenCalled();
   });
 
   it('finalizing saves the assigned doctor’s unsaved draft first, after confirmation', async () => {
@@ -304,87 +246,13 @@ describe('ConsultationRoom screen', () => {
     expect(queryByRole('button', { name: /confirm & finalize/i })).not.toBeInTheDocument();
   });
 
-  it('shows a patient guidance, files and messages but no clinician controls', async () => {
+  it('shows a patient guidance and messages but no clinician controls', async () => {
     mock.getConsultation.mockResolvedValue(fixtures.consultation({ state: 'CLAIMED' }));
     const { findByText, queryByRole, queryByLabelText } = render(fixtures.users.patient);
     expect(await findByText(/will start the session shortly/i)).toBeInTheDocument();
     expect(queryByRole('button', { name: /start session/i })).not.toBeInTheDocument();
     expect(queryByLabelText(/summary draft/i)).not.toBeInTheDocument();
     expect(mock.getSummary).not.toHaveBeenCalled();
-  });
-
-  it('lists shared files with a signed download link', async () => {
-    mock.getAttachments.mockResolvedValue([
-      {
-        id: 'a-1',
-        filename: 'rash-photo.png',
-        mimeType: 'image/png',
-        sizeBytes: 2048,
-        uploadedBy: 'u-patient',
-        createdAt: '2026-10-22T09:05:00.000Z',
-        downloadUrl: '/attachments/a-1/download?token=t',
-        expiresAt: '2099-01-01T00:00:00.000Z',
-      },
-    ]);
-    const { findByRole, getByText } = render(fixtures.users.doctor);
-    const link = await findByRole('link', { name: 'rash-photo.png' });
-    expect(link).toHaveAttribute('href', 'http://localhost:3000/attachments/a-1/download?token=t');
-    expect(getByText(/2\.0 KB · Patient/)).toBeInTheDocument();
-  });
-
-  describe('removing a shared file (ADR-0028)', () => {
-    const patientFile = {
-      id: 'a-1',
-      filename: 'wrong-photo.png',
-      mimeType: 'image/png',
-      sizeBytes: 2048,
-      uploadedBy: 'u-patient',
-      createdAt: '2026-10-22T09:05:00.000Z',
-      downloadUrl: '/attachments/a-1/download?token=t',
-      expiresAt: '2099-01-01T00:00:00.000Z',
-    };
-
-    it('lets the patient remove their own file during the session, after confirming', async () => {
-      mock.getAttachments.mockResolvedValue([patientFile]);
-      const { user, findByRole, getByRole, queryByRole } = render(fixtures.users.patient);
-      await user.click(await findByRole('button', { name: /remove wrong-photo\.png/i }));
-      expect(mock.deleteAttachment).not.toHaveBeenCalled();
-      await user.click(getByRole('button', { name: /remove file/i }));
-      expect(mock.deleteAttachment).toHaveBeenCalledWith('c-1', 'a-1');
-      await waitFor(() =>
-        expect(queryByRole('link', { name: 'wrong-photo.png' })).not.toBeInTheDocument(),
-      );
-    });
-
-    it('offers no Remove once the session has ended', async () => {
-      mock.getConsultation.mockResolvedValue(fixtures.consultation({ state: 'ENDED' }));
-      mock.getAttachments.mockResolvedValue([patientFile]);
-      const { findByRole, queryByRole } = render(fixtures.users.patient);
-      await findByRole('link', { name: 'wrong-photo.png' });
-      expect(queryByRole('button', { name: /remove/i })).not.toBeInTheDocument();
-    });
-
-    it("never offers Remove to a clinician, or on the clinician's files", async () => {
-      mock.getAttachments.mockResolvedValue([{ ...patientFile, uploadedBy: 'u-doctor' }]);
-      const asDoctor = render(fixtures.users.doctor);
-      await asDoctor.findByRole('link', { name: 'wrong-photo.png' });
-      expect(asDoctor.queryByRole('button', { name: /remove/i })).not.toBeInTheDocument();
-      asDoctor.unmount();
-
-      const asPatient = render(fixtures.users.patient);
-      await asPatient.findByRole('link', { name: 'wrong-photo.png' });
-      expect(asPatient.queryByRole('button', { name: /remove/i })).not.toBeInTheDocument();
-    });
-  });
-
-  it('uploads a chosen file during the session', async () => {
-    mock.uploadAttachment.mockResolvedValue({});
-    const { user, findByRole, container } = render(fixtures.users.doctor);
-    await findByRole('button', { name: /attach a file/i });
-    const input = container.querySelector('input[type="file"]') as HTMLInputElement;
-    const file = new File(['x'], 'scan.pdf', { type: 'application/pdf' });
-    await user.upload(input, file);
-    await waitFor(() => expect(mock.uploadAttachment).toHaveBeenCalledWith('c-1', file));
   });
 
   it('surfaces a load error when the consultation cannot be fetched', async () => {

@@ -9,7 +9,7 @@ import { AuditQueryDto } from './dto/audit-query.dto';
 /**
  * Audit log is admin-only (FR-15). It deliberately exposes no clinical content —
  * separation of duties (invariant 3): admins operate the system but cannot read
- * messages, attachments, or summaries. Supports filtering by actor, event type,
+ * messages or summaries. Supports filtering by actor, event type,
  * consultation, and time range, with pagination.
  */
 @Controller('audit')

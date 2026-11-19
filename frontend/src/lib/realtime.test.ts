@@ -93,17 +93,14 @@ describe('realtime socket', () => {
     localStorage.setItem('vcp_token', 'tok');
     const onMessage = vi.fn();
     const onConsultationUpdated = vi.fn();
-    const onPresence = vi.fn();
     const { unmount } = renderHook(() =>
-      useConsultationRoom('c-1', { onMessage, onConsultationUpdated, onPresence }),
+      useConsultationRoom('c-1', { onMessage, onConsultationUpdated }),
     );
     expect(fakeSocket.emit).toHaveBeenCalledWith('join:consultation', { consultationId: 'c-1' });
     handlers.get('message:created')?.({ message: { id: 'm-1' } });
     handlers.get('consultation:updated')?.();
-    handlers.get('presence:updated')?.({ participants: [] });
     expect(onMessage).toHaveBeenCalledWith({ id: 'm-1' });
     expect(onConsultationUpdated).toHaveBeenCalled();
-    expect(onPresence).toHaveBeenCalledWith([]);
     unmount();
     expect(fakeSocket.emit).toHaveBeenCalledWith('leave:consultation', { consultationId: 'c-1' });
   });

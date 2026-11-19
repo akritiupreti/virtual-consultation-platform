@@ -37,8 +37,8 @@ patient, **completes** it, and a **summary** is finalized — all gated by the
 persisted messaging, summary finalize rules, core audit events, happy-path +
 critical-scenario tests.
 
-**Not in the MVP (later phases):** live WebSocket/Redis real-time, presence,
-claim-timeout aging, attachments with signed URLs, full audit catalogue,
+**Not in the MVP (later phases):** live WebSocket real-time, the claim-start
+timeout, full audit catalogue,
 metrics/health dashboards, accessibility & visual-regression suites, performance
 tuning. These are deliberately deferred so the core gets depth, not breadth.
 
@@ -78,10 +78,10 @@ gantt
     End-to-end core workflow + RBAC + tests      :p2, after p1, 14d
 
     section Phase 3 Real-time
-    WebSockets, Redis presence/pubsub, requeue   :p3, after p2, 7d
+    WebSockets, live queue + room, requeue       :p3, after p2, 7d
 
     section Phase 4 Security
-    Authz matrix, audit, attachments, privacy    :p4, after p3, 7d
+    Authz matrix, audit, deactivation, privacy   :p4, after p3, 7d
 
     section Phase 5 Ops
     Logging, health, metrics, Compose, CI/CD     :p5, after p4, 7d
@@ -126,8 +126,8 @@ cannot read clinical content.
 ### Phase 3 — Real-time & Concurrency hardening
 
 **Goal:** make it live.
-**Deliverables:** WebSocket channel for queue + room, Redis presence + pub/sub
-fan-out, real-time position ("N ahead"), claim-start **TTL + auto-requeue**,
+**Deliverables:** WebSocket channel for queue + room with matrix-checked room joins,
+real-time position ("N ahead"), claim-start **TTL + auto-requeue**,
 reconnection handling. `architecture.md` updated with sequence diagrams.
 **Exit criteria:** two browser sessions see live updates; a claimed-but-not-
 started case requeues automatically and is audited.
@@ -136,16 +136,16 @@ started case requeues automatically and is audited.
 
 **Goal:** defensible handling of sensitive data.
 **Deliverables:** full authorization matrix enforced, complete audit catalogue +
-query view for admins, attachments via signed URLs, input validation hardening,
-`security-privacy.md` threat model.
+query view for admins, account deactivation lifecycle, rate limiting, input
+validation hardening, `security-privacy.md` threat model.
 **Exit criteria:** threat-model mitigations implemented or documented as accepted
-risks; privilege-escalation and attachment-access tests pass.
+risks; privilege-escalation and separation-of-duties tests pass.
 
 ### Phase 5 — Observability & Ops
 
 **Goal:** operable and reproducible.
 **Deliverables:** structured logging with correlation IDs, health/readiness
-endpoints, basic metrics, full Docker Compose (app + DB + Redis), complete CI/CD
+endpoints, basic metrics, full Docker Compose (app + DB), complete CI/CD
 pipeline with coverage gates and image build. `observability.md`, `deployment.md`.
 **Exit criteria:** one command brings the whole stack up; a request can be traced
 end-to-end by correlation ID; CI enforces coverage.
@@ -190,7 +190,7 @@ clean and green.
 | 14  | `docs/observability.md`                                      | 5          |
 | 15  | `docs/deployment.md`                                         | 5          |
 | 16  | `docs/testing-strategy.md`                                   | 2/6        |
-| 17  | `docs/adr/` — template + 0001–0029 (more as decisions arise) | 🟡 ongoing |
+| 17  | `docs/adr/` — template + 0001–0023 (more as decisions arise) | 🟡 ongoing |
 | 18  | `docs/retrospective.md`                                      | 7 ✅       |
 | 19  | `docs/performance.md`                                        | 7 ✅       |
 | 20  | `docs/demo-script.md`                                        | 7 ✅       |
@@ -200,35 +200,29 @@ clean and green.
 - ADR-0001 — Backend framework choice (NestJS vs Express/Fastify)
 - ADR-0002 — PostgreSQL as system of record
 - ADR-0003 — Claim concurrency strategy (DB-atomic conditional update)
-- ADR-0004 — Redis responsibilities (and non-responsibilities)
-- ADR-0005 — Real-time transport (WebSockets) & fan-out
-- ADR-0006 — AuthN/AuthZ approach (sessions/JWT + role+state matrix)
-- ADR-0007 — Attachment storage & signed-URL access ✅
-- ADR-0008 — Deployment target (local Docker Compose) ✅
-- ADR-0009 — Real-time implementation (socket.io + Redis adapter) ✅
-- ADR-0010 — Claim-start TTL via a DB-authoritative sweeper ✅
-- ADR-0011 — Application-level rate limiting ✅
-- ADR-0012 — Mid-session reassignment on clinician deactivation ✅
-- ADR-0013 — Structured logging & correlation IDs ✅
-- ADR-0014 — Metrics (Prometheus) ✅
-- ADR-0015 — Frontend test runner (Vitest) ✅
-- ADR-0016 — Coverage-gate strategy (merged unit + e2e) ✅
-- ADR-0017 — Accessibility tooling (two-tier axe) ✅
-- ADR-0018 — Visual-regression tooling & baseline strategy ✅
-- ADR-0019 — Audit-log query indexing (Phase 7 performance) ✅
+- ADR-0004 — Real-time transport (WebSockets)
+- ADR-0005 — AuthN/AuthZ approach (sessions/JWT + role+state matrix)
+- ADR-0006 — Deployment target (local Docker Compose) ✅
+- ADR-0007 — Real-time implementation (socket.io) ✅
+- ADR-0008 — Claim-start TTL via a DB-authoritative sweeper ✅
+- ADR-0009 — Application-level rate limiting ✅
+- ADR-0010 — No deactivation during an active session ✅
+- ADR-0011 — Structured logging & correlation IDs ✅
+- ADR-0012 — Metrics (Prometheus) ✅
+- ADR-0013 — Frontend test runner (Vitest) ✅
+- ADR-0014 — Coverage-gate strategy (merged unit + e2e) ✅
+- ADR-0015 — Accessibility tooling (two-tier axe) ✅
+- ADR-0016 — Visual-regression tooling & baseline strategy ✅
+- ADR-0017 — Audit-log query indexing (Phase 7 performance) ✅
 
 ### ADRs added after Phase 7 (workflow refinements)
 
-- ADR-0020 — Doctor sign-off of nurse-run consultations ✅
-- ADR-0021 — Patient in-app notifications for state changes ✅
-- ADR-0022 — Autosave the summary draft (superseded by ADR-0026)
-- ADR-0023 — Finalizing doctor keeps read access to the signed summary ✅
-- ADR-0024 — Request changes: return a draft to the drafter ✅
-- ADR-0025 — Durable "changes requested" indicator ✅
-- ADR-0026 — Explicit save for the summary draft (supersedes ADR-0022) ✅
-- ADR-0027 — Live summary and sign-off signals (doctors' sign-off room) ✅
-- ADR-0028 — A patient may remove a file they shared, during the session only ✅
-- ADR-0029 — A doctor's own sign-off history on the sign-off screen ✅
+- ADR-0018 — Doctor sign-off of nurse-run consultations ✅
+- ADR-0019 — Patient in-app notifications for state changes ✅
+- ADR-0020 — Finalizing doctor keeps read access to the signed summary ✅
+- ADR-0021 — Explicit save for the summary draft ✅
+- ADR-0022 — Live summary and sign-off signals (doctors' sign-off room) ✅
+- ADR-0023 — A doctor's own sign-off history on the sign-off screen ✅
 
 ---
 
@@ -268,7 +262,7 @@ Built out in Phase 1 (nothing created yet beyond docs):
 
 - Package manager + lockfile; shared TS config; ESLint + Prettier.
 - Prisma schema + initial migration; seed script with test users per role.
-- `.env.example` enumerating required env vars (DB URL, Redis URL, JWT secret…).
+- `.env.example` enumerating required env vars (DB URL, JWT secret…).
 - Postman collection for the REST API (reviewer asked for API testing via Postman).
 - Pre-commit hooks (lint/format/commit-message) to enforce `CONTRIBUTING.md`.
 
@@ -284,12 +278,12 @@ capabilities_, each with evidence.
 | Workflow modeling       | Consultation state machine        | `state-machine.md` diagram + transition tests      |
 | Concurrency control     | DB-atomic claim                   | Sequence diagram + concurrency test (two claimers) |
 | AuthZ (role + state)    | Authorization matrix + guards     | `authorization-matrix.md` + RBAC tests             |
-| Real-time systems       | WebSockets + Redis pub/sub        | Architecture sequence diagram + live-update E2E    |
+| Real-time systems       | WebSockets (socket.io rooms)      | Architecture sequence diagram + live-update E2E    |
 | Data modeling           | Prisma schema                     | `data-model.md` ER diagram + migrations            |
-| Security & privacy      | Signed URLs, separation of duties | `security-privacy.md` threat model + privacy tests |
+| Security & privacy      | Separation of duties, min. views  | `security-privacy.md` threat model + privacy tests |
 | Observability           | Structured logs + correlation IDs | `observability.md` + a traced-request example      |
 | Testing discipline      | Test pyramid + gates              | `testing-strategy.md` + CI coverage report         |
-| Performance engineering | Measured indexing + N+1 fix       | `performance.md` (EXPLAIN before/after) + ADR-0019 |
+| Performance engineering | Measured indexing + N+1 fix       | `performance.md` (EXPLAIN before/after) + ADR-0017 |
 | Delivery / DevOps       | Docker Compose + GitHub Actions   | `deployment.md` + green pipeline                   |
 | Engineering judgment    | ADRs + retrospective              | `docs/adr/` + `retrospective.md`                   |
 

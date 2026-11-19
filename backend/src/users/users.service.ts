@@ -4,11 +4,10 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Role, UserStatus } from '@prisma/client';
+import { ConsultationState, Role, UserStatus } from '@prisma/client';
 import { AUDIT_EVENTS } from '../audit/audit-events';
 import { AuditService } from '../audit/audit.service';
 import { ActingUser } from '../common/authz/policy';
-import { ConsultationsService } from '../consultations/consultations.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RealtimeService } from '../realtime/realtime.service';
 
@@ -20,23 +19,17 @@ export interface UserView {
   createdAt: Date;
 }
 
-export interface DeactivationResult extends UserView {
-  /** Consultations reassigned to the queue because this clinician was mid-session. */
-  reassignedConsultationIds: string[];
-}
-
 /**
  * Admin-only user management (FR-14, FR-23/24/25). Deactivation is a soft state
  * change (never a delete) so history and audit references survive. Admins manage
  * accounts but never read clinical content (invariant 3) — nothing here returns
- * messages, attachments, or summaries.
+ * messages or summaries.
  */
 @Injectable()
 export class UsersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
-    private readonly consultations: ConsultationsService,
     private readonly realtime: RealtimeService,
   ) {}
 
@@ -49,11 +42,14 @@ export class UsersService {
   /**
    * Deactivate an account. A deactivated user cannot log in (auth.service) and any
    * already-issued token is rejected (jwt strategy + WS handshake re-check status),
-   * and their live sockets are dropped. If the user is a clinician holding active
-   * cases (CLAIMED/IN_SESSION), each case is paused and reassigned to the queue so
-   * the patient is picked up by someone else and notified live (FR-24, ADR-0012).
+   * and their live sockets are dropped.
+   *
+   * A user who is in an active session (IN_SESSION, as the patient or the
+   * assigned clinician) cannot be deactivated — the admin retries once the session
+   * ends (FR-24, ADR-0010). A clinician who has only claimed a case can be: the
+   * claim-start TTL returns that case to the queue (ADR-0008).
    */
-  async deactivate(actor: ActingUser, targetId: string): Promise<DeactivationResult> {
+  async deactivate(actor: ActingUser, targetId: string): Promise<UserView> {
     if (actor.id === targetId) {
       // Guard against an admin locking themselves out.
       throw new BadRequestException('You cannot deactivate your own account');
@@ -63,10 +59,24 @@ export class UsersService {
       throw new ConflictException('User is already deactivated');
     }
 
-    const updated = await this.prisma.user.update({
-      where: { id: targetId },
+    // One conditional UPDATE: it only succeeds if the user is not in an active
+    // session at that moment, so the check and the write cannot be split by a
+    // session starting in between.
+    const notInSession = { none: { state: ConsultationState.IN_SESSION } };
+    const result = await this.prisma.user.updateMany({
+      where: {
+        id: targetId,
+        status: UserStatus.ACTIVE,
+        consultationsAsPatient: notInSession,
+        consultationsClaimed: notInSession,
+      },
       data: { status: UserStatus.DEACTIVATED },
     });
+    if (result.count !== 1) {
+      throw new ConflictException(
+        'This user is in an active consultation session; try again after it ends',
+      );
+    }
 
     await this.audit.record({
       actorId: actor.id,
@@ -74,17 +84,9 @@ export class UsersService {
       metadata: { targetUserId: targetId, targetRole: target.role },
     });
 
-    // Reassign active cases first, then drop the user's live sockets.
-    let reassignedConsultationIds: string[] = [];
-    if (target.role === Role.NURSE || target.role === Role.DOCTOR) {
-      reassignedConsultationIds = await this.consultations.reassignActiveCasesOf(
-        targetId,
-        'clinician_deactivated',
-      );
-    }
     this.realtime.disconnectUser(targetId);
 
-    return { ...toView(updated), reassignedConsultationIds };
+    return { ...target, status: UserStatus.DEACTIVATED };
   }
 
   /** Reactivate a previously deactivated account; restores permitted access (FR-25). */

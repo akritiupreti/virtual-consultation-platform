@@ -21,9 +21,8 @@ export interface Transition {
 /** System triggers that are not initiated by a user action. */
 export const ENQUEUE = 'ENQUEUE';
 export const REQUEUE = 'REQUEUE';
-export const REASSIGN = 'REASSIGN';
 
-export type TransitionTrigger = Action | typeof ENQUEUE | typeof REQUEUE | typeof REASSIGN;
+export type TransitionTrigger = Action | typeof ENQUEUE | typeof REQUEUE;
 
 const S = ConsultationState;
 
@@ -48,17 +47,6 @@ export const TRANSITIONS: Record<string, Transition> = {
     to: S.QUEUED,
     actor: 'SYSTEM',
     note: 'Start-TTL expiry — wired in Phase 3',
-  },
-
-  // System: the assigned clinician was deactivated mid-session, so the case is
-  // paused and returned to the queue to be picked up by another clinician
-  // (FR-24, ADR-0012). Covers both a claimed-not-started case and an active
-  // session. Wired in Phase 4 (users deactivation lifecycle).
-  [REASSIGN]: {
-    from: [S.CLAIMED, S.IN_SESSION],
-    to: S.QUEUED,
-    actor: 'SYSTEM',
-    note: 'Clinician deactivated mid-session — reassign to queue (Phase 4)',
   },
 };
 

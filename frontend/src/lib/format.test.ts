@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   elapsedSince,
-  formatBytes,
   formatDate,
   formatDateTime,
   formatDuration,
@@ -22,7 +21,7 @@ describe('display formatting', () => {
     expect(priorityLabel('EMERGENCY')).toBe('Emergency');
     expect(roleLabel('DOCTOR')).toBe('Doctor');
     expect(humanize('MENTAL_HEALTH')).toBe('Mental health');
-    expect(humanize('SUMMARY_CHANGES_REQUESTED')).toBe('Summary changes requested');
+    expect(humanize('SUMMARY_FINALIZED')).toBe('Summary finalized');
     expect(humanize(null)).toBe('—');
   });
 
@@ -60,10 +59,7 @@ describe('display formatting', () => {
     expect(formatTime('2026-10-22T09:00:00.000Z')).not.toBe('');
   });
 
-  it('formats file sizes and short ids', () => {
-    expect(formatBytes(512)).toBe('512 B');
-    expect(formatBytes(1536)).toBe('1.5 KB');
-    expect(formatBytes(3 * 1024 * 1024)).toBe('3.0 MB');
+  it('formats short ids', () => {
     expect(shortId('0123456789abcdef')).toBe('01234567');
     expect(shortId(null)).toBe('—');
   });

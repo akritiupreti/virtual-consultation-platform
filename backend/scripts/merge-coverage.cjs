@@ -3,9 +3,9 @@
  * Combine the unit and e2e Istanbul coverage into a single `.nyc_output` set so
  * `nyc report` / `nyc check-coverage` evaluate the gate against BOTH suites.
  *
- * Why this exists (ADR-0016): the critical guarantees (DB-atomic claim, RBAC,
- * real-time, observability) are proven by the e2e suite against real Postgres/
- * Redis, not by mock-heavy unit tests. Unit-only coverage is therefore ~13% and
+ * Why this exists (ADR-0014): the critical guarantees (DB-atomic claim, RBAC,
+ * real-time, observability) are proven by the e2e suite against a real
+ * Postgres, not by mock-heavy unit tests. Unit-only coverage is therefore ~13% and
  * says nothing useful; the honest coverage number is the union of what the unit
  * AND e2e suites execute. Jest cannot merge two separate runs, so we drop each
  * run's `coverage-final.json` into `.nyc_output` (nyc unions all files it finds

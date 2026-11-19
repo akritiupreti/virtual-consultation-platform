@@ -5,7 +5,7 @@ import { ConsultationState } from '@prisma/client';
  * single definition of channel names and payload shapes shared by the gateway and
  * the publisher service. Payloads deliberately carry no clinical content beyond
  * what the authorization matrix already permits the room's members to see
- * (ADR-0009, invariants 3 & 6): queue/position events are ids + states + counts;
+ * (ADR-0007, invariants 3 & 6): queue/position events are ids + states + counts;
  * message bodies travel only inside the private per-consultation room.
  */
 export const WS_EVENTS = {
@@ -25,24 +25,13 @@ export const WS_EVENTS = {
   /** A new message in a consultation room (participants only). */
   MESSAGE_CREATED: 'message:created',
   /**
-   * A reviewing doctor asked the drafter to revise a summary (ADR-0024). Delivered
-   * only to the drafter's personal room, so the optional note reaches no one else.
-   */
-  SUMMARY_CHANGES_REQUESTED: 'summary:changes-requested',
-  /**
-   * A consultation's summary changed (drafted, returned for changes, finalized) or
-   * a case entered the sign-off window (ADR-0027). Content-free: recipients — the
+   * A consultation's summary changed (drafted, finalized) or
+   * a case entered the sign-off window (ADR-0022). Content-free: recipients — the
    * assigned clinician and every doctor — reconcile via REST.
    */
   SUMMARY_UPDATED: 'summary:updated',
-  /** A file was attached in a consultation room; members reconcile via REST. */
-  ATTACHMENT_CREATED: 'attachment:created',
-  /** The patient removed a file they shared (ADR-0028); members re-fetch the list. */
-  ATTACHMENT_REMOVED: 'attachment:removed',
   /** A patient's live "N ahead" position changed. */
   POSITION_UPDATED: 'position:updated',
-  /** Presence of a consultation's participants changed. */
-  PRESENCE_UPDATED: 'presence:updated',
 } as const;
 
 /** Shared triage-queue room — clinicians only. */
@@ -52,8 +41,8 @@ export const consultationRoom = (id: string): string => `consultation:${id}`;
 /** Per-user personal room — carries a patient's own position/state updates. */
 export const userRoom = (userId: string): string => `user:${userId}`;
 /**
- * Doctors' sign-off room (ADR-0027). Every DOCTOR socket joins it on connect: any
- * doctor may sign off a case awaiting it (ADR-0020), so the worklist and an open
+ * Doctors' sign-off room (ADR-0022). Every DOCTOR socket joins it on connect: any
+ * doctor may sign off a case awaiting it (ADR-0018), so the worklist and an open
  * review must reconcile live for all of them. Carries content-free signals only.
  */
 export const SIGNOFF_ROOM = 'signoff';
@@ -64,7 +53,6 @@ export type QueueChangeReason =
   | 'priority_changed'
   | 'claimed'
   | 'requeued'
-  | 'reassigned'
   | 'completed'
   | 'cancelled'
   | 'state_changed';
@@ -85,26 +73,12 @@ export interface MessageCreatedPayload {
   message: { id: string; senderId: string; body: string; createdAt: string };
 }
 
-/**
- * A reviewing doctor returned a drafted summary for revision (ADR-0024). Emitted
- * only to the drafting clinician's personal room; the optional note is feedback for
- * that one clinician and is not persisted anywhere.
- */
-export interface SummaryChangesRequestedPayload {
-  consultationId: string;
-  note?: string;
-}
-
-/** Why a summary signal fired (ADR-0027). No clinical content. */
-export type SummaryUpdateReason = 'drafted' | 'changes_requested' | 'finalized' | 'ended';
+/** Why a summary signal fired (ADR-0022). No clinical content. */
+export type SummaryUpdateReason = 'drafted' | 'finalized' | 'ended';
 
 export interface SummaryUpdatedPayload {
   consultationId: string;
   reason: SummaryUpdateReason;
-}
-
-export interface AttachmentCreatedPayload {
-  consultationId: string;
 }
 
 export interface PositionUpdatedPayload {
@@ -112,11 +86,6 @@ export interface PositionUpdatedPayload {
   state: ConsultationState;
   /** Cases ahead in the queue, or null when not QUEUED. */
   position: number | null;
-}
-
-export interface PresenceUpdatedPayload {
-  consultationId: string;
-  participants: Array<{ userId: string; online: boolean }>;
 }
 
 /** Ack returned to a client for subscribe/join requests. */

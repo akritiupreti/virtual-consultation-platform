@@ -30,7 +30,7 @@ export default function TriageQueue(): JSX.Element {
     }
   }, []);
 
-  // Live updates via WebSocket (ADR-0009); the slow interval is only a fallback
+  // Live updates via WebSocket (ADR-0007); the slow interval is only a fallback
   // for when the socket is unavailable.
   useQueueUpdates(refresh);
   useEffect(() => {

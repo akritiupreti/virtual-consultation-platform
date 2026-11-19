@@ -62,9 +62,8 @@ export async function createTestApp(): Promise<TestContext> {
 
 /**
  * Boot the app AND listen on an ephemeral port, so socket.io clients can connect.
- * Uses the default in-memory socket.io adapter (no Redis), which is enough to prove
- * two subscribers see live updates on one instance; cross-instance fan-out (the
- * Redis adapter) is a separate manual check — see docs/testing-strategy.md.
+ * Uses the default socket.io adapter, so two subscribers can be shown to see live
+ * updates exactly as they do in the running app.
  */
 export async function createListeningTestApp(): Promise<ListeningTestContext> {
   const { app, prisma } = await createTestApp();
@@ -141,9 +140,7 @@ export function waitForDisconnect(socket: Socket, timeoutMs = 4000): Promise<voi
 /** Delete all rows in FK-safe order between tests. */
 export async function resetDb(prisma: PrismaService): Promise<void> {
   await prisma.auditLog.deleteMany();
-  await prisma.addendum.deleteMany();
   await prisma.summary.deleteMany();
-  await prisma.attachment.deleteMany();
   await prisma.message.deleteMany();
   await prisma.intake.deleteMany();
   await prisma.consultation.deleteMany();

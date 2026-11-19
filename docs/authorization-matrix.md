@@ -12,7 +12,7 @@ can never read clinical content.
 flowchart LR
     subgraph Clinical [Clinical content]
         M[Messages]
-        At[Attachments]
+        In[Intake]
         Su[Summaries]
     end
     Patient([Patient]) -->|own consultation only| Clinical
@@ -33,21 +33,16 @@ Legend: ✅ allowed · ⚠️ allowed with guard · ❌ denied.
 | View triage queue                  |   ❌    |  ✅   |   ✅   |  ❌   | —                                                                                                             |
 | View pre-claim case info (minimal) |   ❌    |  ✅   |   ✅   |  ❌   | Minimal fields only                                                                                           |
 | View pending sign-off worklist     |   ❌    |  ❌   |   ✅   |  ❌   | ENDED + drafted-unfinalized; minimal fields                                                                   |
-| View own sign-off history          |   ❌    |  ❌   |   ⚠️   |  ❌   | Own sign-offs only (`finalizedBy=self`); minimal fields ([ADR-0029](adr/0029-doctor-signoff-history.md))      |
+| View own sign-off history          |   ❌    |  ❌   |   ⚠️   |  ❌   | Own sign-offs only (`finalizedBy=self`); minimal fields ([ADR-0023](adr/0023-doctor-signoff-history.md))      |
 | Claim case                         |   ❌    |  ⚠️   |   ⚠️   |  ❌   | `state=QUEUED`                                                                                                |
 | Start consultation                 |   ❌    |  ⚠️   |   ⚠️   |  ❌   | `actor = claimed_by`, `state=CLAIMED`, under active-session cap                                               |
 | Send / read messages               |   ⚠️    |  ⚠️   |   ⚠️   |  ❌   | Participant of that consultation                                                                              |
-| Upload attachment                  |   ⚠️    |  ⚠️   |   ⚠️   |  ❌   | Participant; `state=IN_SESSION`                                                                               |
-| View / download attachment         |   ⚠️    |  ⚠️   |   ⚠️   |  ❌   | Participant; short-lived user-scoped signed URL                                                               |
-| Remove attachment                  |   ⚠️    |  ❌   |   ❌   |  ❌   | Patient owner; **own upload**; `state=IN_SESSION` only ([ADR-0028](adr/0028-patient-attachment-removal.md))   |
 | End consultation                   |   ❌    |  ⚠️   |   ⚠️   |  ❌   | `actor = claimed_by`, `state=IN_SESSION`                                                                      |
 | Draft summary                      |   ❌    |  ⚠️   |   ⚠️   |  ❌   | Assigned clinician                                                                                            |
 | Finalize summary                   |   ❌    |  ❌   |   ⚠️   |  ❌   | `role=DOCTOR`, `state=ENDED`                                                                                  |
-| Request summary changes            |   ❌    |  ❌   |   ⚠️   |  ❌   | `role=DOCTOR`, `state=ENDED`, draft not finalized; returns the draft to the drafter, case stays ENDED         |
-| Add summary addendum               |   ❌    |  ⚠️   |   ⚠️   |  ❌   | Clinician; `state=SUMMARIZED` (append-only)                                                                   |
 | View summary                       |   ⚠️    |  ⚠️   |   ⚠️   |  ❌   | Participant, **any doctor while `state=ENDED`** (sign-off), **or the finalizing doctor** (`finalizedBy=self`) |
 | View clinical content              |   ⚠️    |  ⚠️   |   ⚠️   |  ❌   | **Admin always denied**                                                                                       |
-| Manage / deactivate users          |   ❌    |  ❌   |   ❌   |  ✅   | —                                                                                                             |
+| Manage / deactivate users          |   ❌    |  ❌   |   ❌   |  ⚠️   | Not yourself; not a user who is in an active session (`409` until it ends)                                    |
 | View audit log                     |   ❌    |  ❌   |   ❌   |  ✅   | Excludes clinical content                                                                                     |
 
 ## Enforcement rules
@@ -58,42 +53,28 @@ Legend: ✅ allowed · ⚠️ allowed with guard · ❌ denied.
 3. **Guards share the transition registry** in [state-machine.md](state-machine.md)
    so state checks are never duplicated.
 4. **Admin ≠ clinical access** is a hard, tested invariant, not a configuration.
-5. **Signed URLs never bypass the matrix.** An attachment download URL is a
-   short-lived, user-scoped token, but the download handler still re-loads the bound
-   user, confirms the account is active, and re-runs this matrix (role → state →
-   ownership) on every fetch — so an admin or non-participant is refused even with a
-   valid link ([ADR-0007](adr/0007-attachment-storage.md)).
-6. **Deactivated accounts are denied everything.** Account status is re-checked
+5. **Deactivated accounts are denied everything.** Account status is re-checked
    against the database on every REST request and WebSocket handshake, so a token
    issued before deactivation stops working immediately (FR-25).
-7. **Doctor sign-off read window.** Because `FINALIZE_SUMMARY` is doctor-only and
+6. **Doctor sign-off read window.** Because `FINALIZE_SUMMARY` is doctor-only and
    not participant-scoped, a doctor may also **read** a case (consultation detail +
    summary) while it is **awaiting sign-off** — i.e. in the `FINALIZE_SUMMARY`
    transition's source state (`ENDED`) with a drafted, unfinalized summary — even if
    they did not run it. This closes the read/finalize asymmetry for nurse-run cases
    and is scoped by rule 3 (states come from the registry); admin is never a doctor,
-   so separation of duties is untouched ([ADR-0020](adr/0020-doctor-signoff-of-nurse-run-cases.md)).
-8. **Finalizing doctor keeps the summary they signed.** The sign-off window (rule 7) ends at `ENDED`, so a doctor who signs off a nurse-run case — a
+   so separation of duties is untouched ([ADR-0018](adr/0018-doctor-signoff-of-nurse-run-cases.md)).
+7. **Finalizing doctor keeps the summary they signed.** The sign-off window (rule 6) ends at `ENDED`, so a doctor who signs off a nurse-run case — a
    non-participant — would otherwise be locked out of the summary the instant they
    finalize it (`ENDED → SUMMARIZED`). The **summary** read therefore also admits
    the doctor whose id is the summary's `finalizedBy` — exactly the one signing
    doctor, never any wider, and the summary only: the consultation **detail** stays
-   participants-only after sign-off (rule 7 unchanged). Admin is never a doctor, so
-   separation of duties is untouched ([ADR-0023](adr/0023-finalizing-doctor-summary-read.md)).
-9. **Request changes instead of finalizing.** A reviewing doctor may return a
-   drafted, unfinalized summary to the drafter rather than sign one they disagree
-   with (`REQUEST_SUMMARY_CHANGES`, doctor-only like finalize, gated to `ENDED` in
-   the service). No state change — the case stays `ENDED` so the assigned clinician
-   re-drafts and a doctor finalizes once satisfied. Audited as who/what/when (the
-   drafter who must act); the doctor's note is delivered to the drafter in real time
-   and kept on the summary as a durable "please revise" marker until they save a
-   revision — never written to the audit log or any log line (invariant 6,
-   [ADR-0024](adr/0024-request-summary-changes.md)/[0025](adr/0025-durable-changes-requested-indicator.md)).
-10. **Real-time rooms follow the same rules.** WebSocket room membership never
-    grants more than REST would: `queue` requires `VIEW_QUEUE`; `consultation:<id>`
-    runs `authorizeConsultationAction(VIEW_CONSULTATION)`; `user:<id>` and the
-    doctors' `signoff` room are joined by the server from the verified JWT. Events
-    in `user:<id>` and `signoff` are content-free signals (`summary:updated`,
-    `consultation:updated`) — clients re-read through REST, where this matrix applies
-    — and summary signals are never sent to the patient
-    ([ADR-0009](adr/0009-realtime-implementation.md), [ADR-0027](adr/0027-live-summary-and-signoff-signals.md)).
+   participants-only after sign-off (rule 6 unchanged). Admin is never a doctor, so
+   separation of duties is untouched ([ADR-0020](adr/0020-finalizing-doctor-summary-read.md)).
+8. **Real-time rooms follow the same rules.** WebSocket room membership never
+   grants more than REST would: `queue` requires `VIEW_QUEUE`; `consultation:<id>`
+   runs `authorizeConsultationAction(VIEW_CONSULTATION)`; `user:<id>` and the
+   doctors' `signoff` room are joined by the server from the verified JWT. Events
+   in `user:<id>` and `signoff` are content-free signals (`summary:updated`,
+   `consultation:updated`) — clients re-read through REST, where this matrix applies
+   — and summary signals are never sent to the patient
+   ([ADR-0007](adr/0007-realtime-implementation.md), [ADR-0022](adr/0022-live-summary-and-signoff-signals.md)).

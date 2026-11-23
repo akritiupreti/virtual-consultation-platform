@@ -33,7 +33,7 @@ erDiagram
         uuid claimed_by FK "nullable"
         enum state "REQUESTED|QUEUED|CLAIMED|IN_SESSION|ENDED|SUMMARIZED|CANCELLED"
         enum priority "ROUTINE|URGENT|EMERGENCY"
-        int version "optimistic lock"
+        int version "change counter"
         timestamp enqueued_at "nullable"
         timestamp claimed_at "nullable"
         timestamp started_at "nullable"
@@ -85,8 +85,11 @@ claimed by a clinician, and has at most one intake and one summary.
 
 - **One role per user** via an enum keeps authorization simple; nurse vs doctor
   differences are expressed in the [authorization matrix](authorization-matrix.md).
-- **Claim concurrency** relies on `state` + `claimed_by` + a `version` column; the
-  claim is an atomic conditional `UPDATE` (see [ADR-0003](adr/0003-claim-concurrency.md)).
+- **Claim concurrency** relies on `state` + `claimed_by`: the claim is an atomic
+  conditional `UPDATE … WHERE state = 'QUEUED' AND claimed_by IS NULL`, so only one
+  clinician's update can match (see [ADR-0003](adr/0003-claim-concurrency.md)). The
+  `version` column is just a change counter bumped on every state change; the claim
+  does not depend on it.
 - **The queue is derived**, not a separate table: it is the set of `QUEUED`
   consultations ordered by `priority` then `enqueued_at`, and each patient's
   "N ahead" position is counted from it on demand.
@@ -105,8 +108,8 @@ claimed by a clinician, and has at most one intake and one summary.
   queue read; `patient_id` and `claimed_by` are indexed for "my consultations" lists.
 - `messages (consultation_id, created_at)` serves a room's conversation in order.
 - `audit_logs` has `(created_at)` and `(event_type, created_at)` for the admin audit
-  query, plus `consultation_id` and `actor_id` filters
-  ([ADR-0017](adr/0017-audit-log-indexing.md)).
+  query, plus `consultation_id` and `actor_id` filters (chosen from measured query
+  plans — see [performance.md](performance.md)).
 - Unique constraints enforce one `INTAKE` and one `SUMMARY` per consultation.
 - Foreign keys use `RESTRICT` for people (a user with history cannot be deleted —
   they are deactivated instead), `CASCADE` from a consultation to its intake,

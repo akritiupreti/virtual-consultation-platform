@@ -62,7 +62,8 @@ model Consultation {
   claimedBy  String?           @map("claimed_by") @db.Uuid
   state      ConsultationState @default(REQUESTED)
   priority   Priority          @default(ROUTINE)
-  // Optimistic-lock column; also underpins DB-atomic claim (ADR-0003).
+  // Change counter, bumped on every state change. Not used in any WHERE clause:
+  // the DB-atomic claim is guarded by state + claimed_by (ADR-0003).
   version    Int               @default(0)
   enqueuedAt DateTime?         @map("enqueued_at")
   claimedAt  DateTime?         @map("claimed_at")

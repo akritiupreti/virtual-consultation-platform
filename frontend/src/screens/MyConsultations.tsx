@@ -19,7 +19,7 @@ interface NextStep {
 /**
  * What the clinician has to do next on a case — the list's main job. An ENDED
  * case with no saved draft is called out explicitly: without a draft it cannot
- * reach a doctor's sign-off list (ADR-0018), so it must not go unnoticed.
+ * reach a doctor's sign-off list (ADR-0009), so it must not go unnoticed.
  */
 export function nextStepFor(c: AssignedConsultation, isDoctor: boolean): NextStep {
   switch (c.state) {
@@ -51,7 +51,7 @@ export function nextStepFor(c: AssignedConsultation, isDoctor: boolean): NextSte
  * finalised summary without the URL. The triage queue only lists *unclaimed*
  * cases, so once a clinician claims one this is where they return to it. Updates
  * live: state changes and summary signals reach the assigned clinician's personal
- * room (ADR-0022).
+ * room (ADR-0004).
  */
 export default function MyConsultations(): JSX.Element {
   const { user } = useAuth();

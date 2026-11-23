@@ -16,7 +16,7 @@ async function bootstrap(): Promise<void> {
   // bufferLogs defers startup logs until the pino logger is installed below.
   const app = await NestFactory.create(AppModule, { bodyParser: false, bufferLogs: true });
 
-  // Route all framework logging through pino (structured JSON, ADR-0011).
+  // Route all framework logging through pino (structured JSON, docs/observability.md).
   app.useLogger(app.get(Logger));
 
   // Correlation ID first of all (SC-15): it must run before the framework and the
@@ -36,7 +36,7 @@ async function bootstrap(): Promise<void> {
   ];
   app.enableCors({ origin: corsOrigin, credentials: true });
 
-  // WebSocket transport (ADR-0004/0007): socket.io with the same CORS origins as
+  // WebSocket transport (ADR-0004): socket.io with the same CORS origins as
   // the REST API applied to the handshake.
   app.useWebSocketAdapter(new CorsIoAdapter(app, corsOrigin));
 

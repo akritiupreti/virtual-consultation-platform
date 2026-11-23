@@ -1,7 +1,7 @@
 # Backend image (NestJS). Built from the REPOSITORY ROOT as context because this is
 # an npm-workspaces monorepo — the single package-lock.json lives at the root
 # (compose sets context: . , dockerfile: backend/Dockerfile). Deployment target is
-# local Docker Compose (ADR-0008); image-size optimisation is noted as future work
+# local Docker Compose (ADR-0006); image-size optimisation is noted as future work
 # in docs/deployment.md rather than pursued here.
 
 # ── Build stage ───────────────────────────────────────────────────────────────

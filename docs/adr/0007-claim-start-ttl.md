@@ -1,4 +1,4 @@
-# ADR-0008: Claim-start TTL via a DB-authoritative sweeper
+# ADR-0007: Claim-start TTL via a DB-authoritative sweeper
 
 - **Status:** Accepted
 - **Date:** 2026-10-15
@@ -6,8 +6,7 @@
 
 ## Context
 
-Claiming a case assigns it but does not start it ([C3/C10](../amrit-feedback-responses.md),
-FR-12). A clinician who claims but never starts must not be able to park a case
+Claiming a case assigns it but does not start it (FR-12). A clinician who claims but never starts must not be able to park a case
 indefinitely: a claim not started within a **start TTL** auto-requeues
 (`CLAIMED → QUEUED`), clears `claimed_by`, is audited, and notifies subscribers
 (the `REQUEUE` transition already defined in [state-machine.md](../state-machine.md)).

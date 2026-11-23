@@ -4,7 +4,7 @@ import { UsersService } from '../src/users/users.service';
 
 /**
  * Unit coverage for admin user management guards not fully exercised end-to-end
- * (FR-14, FR-23/24/25, ADR-0010): self-deactivation, double-deactivate/activate,
+ * (FR-14, FR-23/24/25, ADR-0008): self-deactivation, double-deactivate/activate,
  * 404s, and the "not during an active session" rule.
  */
 function makeDeps() {

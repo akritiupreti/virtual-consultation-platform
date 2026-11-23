@@ -149,7 +149,7 @@ model AuditLog {
   // The admin audit query always orders by createdAt DESC (FR-15). The unfiltered
   // "latest events" view scanned the whole table before this index; the composite
   // serves the eventType filter AND its ordering in one index scan, replacing the
-  // bare eventType index (ADR-0017).
+  // bare eventType index (docs/performance.md).
   @@index([createdAt])
   @@index([eventType, createdAt])
   @@map("audit_logs")

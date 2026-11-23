@@ -7,8 +7,7 @@ mitigations.
 
 Related: [authorization matrix](authorization-matrix.md) ·
 [audit logging](audit-logging.md) · [architecture](architecture.md) ·
-[ADR-0005 authn/authz](adr/0005-authn-authz.md) ·
-[ADR-0009 rate limiting](adr/0009-rate-limiting.md).
+[ADR-0005 authn/authz](adr/0005-authn-authz.md).
 
 ---
 
@@ -92,11 +91,11 @@ It is encoded by omission in the [authorization matrix](authorization-matrix.md)
 | T4  | **Messages reach the wrong person**       | Another patient or a non-assigned clinician reading or posting in a room | Messages are participant-only in the matrix, over REST and in the private WS room; negative tests for each outsider (SC-8)    | Implemented |
 | T5  | **Data exposure in logs/URLs**            | PII/clinical data in audit metadata, query strings, or app logs          | Audit stores who/what/when only; no clinical data in URLs; pre-claim view minimized (NFR-2, SC-9)                             | Implemented |
 | T6  | **Stale credential after deactivation**   | Using a JWT issued before deactivation                                   | Account status re-checked from the DB on **every** REST request and WS handshake; live sockets dropped on deactivate (FR-25)  | Implemented |
-| T7  | **Credential brute-force / enumeration**  | Repeated login attempts                                                  | Uniform `401`; rate limiting on auth (ADR-0009); `LOGIN_FAILURE` audited                                                      | Implemented |
+| T7  | **Credential brute-force / enumeration**  | Repeated login attempts                                                  | Uniform `401`; rate limiting on auth; `LOGIN_FAILURE` audited                                                                 | Implemented |
 | T8  | **Oversized/malformed payloads**          | Large JSON bodies, unknown fields                                        | Body-size cap; `ValidationPipe` (whitelist, `forbidNonWhitelisted`); `helmet` headers                                         | Implemented |
 | T9  | **Lost/forged claim under concurrency**   | Two clinicians claim at once; forged state change                        | DB-atomic conditional update ([ADR-0003](adr/0003-claim-concurrency.md)); exactly one winner (SC-2)                           | Implemented |
 | T10 | **Tampered real-time events**             | Spoofed WS payloads granting access                                      | Events are **signals**, not authority; clients reconcile from REST/DB; rooms gated by the matrix                              | Implemented |
-| T11 | **Over-broad real-time fan-out**          | A draft pushed to someone who may not read it (e.g. the patient)         | Summary signals carry ids only; `signoff`/`user:` rooms joined server-side from the JWT; never sent to the patient (ADR-0022) | Implemented |
+| T11 | **Over-broad real-time fan-out**          | A draft pushed to someone who may not read it (e.g. the patient)         | Summary signals carry ids only; `signoff`/`user:` rooms joined server-side from the JWT; never sent to the patient (ADR-0004) | Implemented |
 | T12 | **Expired session left open**             | A tab keeps a signed-in UI after the short-lived JWT expires             | Expired tokens are not restored on load; any `401` signs the user out and says why — the server already rejects the token     | Implemented |
 
 ---
@@ -126,9 +125,9 @@ These are deliberate, reasoned limits for a local, single-operator capstone
   revoked before its (short, 15 min) expiry. _Production:_ refresh-token rotation +
   a revocation list.
 - **Rate-limit counters are in memory.** They reset on restart and are per
-  instance (ADR-0009). _Production:_ a shared store if the API is ever scaled out.
+  instance. _Production:_ a shared store if the API is ever scaled out.
 - **Deactivation waits for a live session to end.** An admin cannot cut off a user
-  mid-consultation ([ADR-0010](adr/0010-deactivation-during-session.md)).
+  mid-consultation ([ADR-0008](adr/0008-deactivation-during-session.md)).
   _Production:_ an "end session now" admin action for urgent cases.
 - **Rate limiting of the audit-write path.** Failed logins write audit rows; abusive
   volume is bounded by the auth rate limiter rather than a separate audit quota.

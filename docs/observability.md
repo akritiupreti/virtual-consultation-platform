@@ -5,8 +5,6 @@ ID that traces a request end-to-end, dependency-aware health probes, and metrics
 This document is **diagram-first** — each section opens with the picture, then
 explains it. Delivered in Phase 5.
 
-Decisions: [ADR-0011 structured logging & correlation IDs](adr/0011-structured-logging.md) ·
-[ADR-0012 metrics](adr/0012-metrics.md).
 Related: [architecture](architecture.md) · [deployment](deployment.md) ·
 [security & privacy](security-privacy.md) · [audit log](audit-logging.md).
 
@@ -17,7 +15,7 @@ Related: [architecture](architecture.md) · [deployment](deployment.md) ·
 
 ---
 
-## 1. Structured logging (ADR-0011)
+## 1. Structured logging
 
 Logs are **JSON** emitted by `pino` (via `nestjs-pino`), which replaces the default
 Nest logger so every existing `Logger` call is reformatted with no code change. A
@@ -143,7 +141,7 @@ healthy.
 
 ---
 
-## 4. Metrics (ADR-0012)
+## 4. Metrics
 
 `GET /metrics` exposes Prometheus-format metrics for a scraper (or `curl`):
 

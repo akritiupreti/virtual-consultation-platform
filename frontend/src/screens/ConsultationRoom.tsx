@@ -42,7 +42,7 @@ export default function ConsultationRoom(): JSX.Element {
 
   // ── Summary draft ─────────────────────────────────────────────────────────
   // The editor text, and the last version the server holds. The difference is
-  // "unsaved changes": saving is an explicit action (ADR-0021), so a half-written
+  // "unsaved changes": saving is an explicit action, so a half-written
   // revision never reaches a reviewing doctor.
   const [draft, setDraft] = useState('');
   const [savedDraft, setSavedDraft] = useState('');
@@ -142,14 +142,14 @@ export default function ConsultationRoom(): JSX.Element {
     }
   }, [isClinician, loadSummary]);
 
-  // Live room: new messages and state changes (ADR-0007).
+  // Live room: new messages and state changes (ADR-0004).
   useConsultationRoom(id, {
     onMessage: (m) =>
       setMessages((prev) => (prev.some((x) => x.id === m.id) ? prev : [...prev, m])),
     onConsultationUpdated: () => void loadDetail(),
   });
 
-  // Live summary signals (ADR-0022): a reviewing doctor sees a revision arrive,
+  // Live summary signals (ADR-0004): a reviewing doctor sees a revision arrive,
   // and the case leaves their view once signed off, without reloading the page.
   useSummaryUpdates((payload) => {
     if (payload.consultationId !== id || !isClinician) {
@@ -217,7 +217,7 @@ export default function ConsultationRoom(): JSX.Element {
 
   // Finalize locks the summary. The assigned doctor's current text is saved first,
   // so the signed record is exactly what they see; a sign-off doctor who did not
-  // run the case finalizes the saved draft as-is (they may not re-draft — ADR-0018).
+  // run the case finalizes the saved draft as-is (they may not re-draft — ADR-0009).
   async function finalize(): Promise<void> {
     setConfirming(null);
     if (isAssignedClinician && dirty && !(await saveDraft())) {
@@ -230,7 +230,7 @@ export default function ConsultationRoom(): JSX.Element {
     if (isAssignedClinician) {
       await loadDetail();
     } else {
-      // A sign-off doctor's read access ends with the sign-off window (ADR-0020
+      // A sign-off doctor's read access ends with the sign-off window (ADR-0009
       // keeps the summary itself readable), so go back to the worklist.
       notify('Summary finalized and shared with the patient.', { tone: 'success' });
       navigate('/pending-signoff', { replace: true });
@@ -294,7 +294,7 @@ export default function ConsultationRoom(): JSX.Element {
 
   const inSession = detail.state === 'IN_SESSION';
   // Doctor sign-off becomes available once the session has ended (ENDED → SUMMARIZED),
-  // for any doctor — including one reviewing a case a nurse ran (ADR-0018).
+  // for any doctor — including one reviewing a case a nurse ran (ADR-0009).
   const canFinalize = isDoctor && detail.state === 'ENDED' && !detail.summaryFinalized;
   const reviewingForSignoff = canFinalize && !isAssignedClinician;
   const patientGuidance = user?.role === 'PATIENT' ? PATIENT_GUIDANCE[detail.state] : undefined;

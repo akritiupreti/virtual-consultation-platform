@@ -22,14 +22,14 @@ import { UsersModule } from './users/users.module';
   imports: [
     // Single source of env: the monorepo-root .env (falls back to a local one).
     ConfigModule.forRoot({ isGlobal: true, envFilePath: ['../.env', '.env'] }),
-    // Structured JSON logging with per-request correlation IDs (ADR-0011). Replaces
+    // Structured JSON logging with per-request correlation IDs (docs/observability.md). Replaces
     // the default Nest logger; see buildLoggerParams for the no-PII/clinical policy.
     LoggerModule.forRoot(buildLoggerParams()),
     // Correlation store + Prometheus metrics + request-timing interceptor (Phase 5).
     CommonModule,
-    // Drives the claim-start TTL sweeper (ADR-0008).
+    // Drives the claim-start TTL sweeper (ADR-0007).
     ScheduleModule.forRoot(),
-    // App-level rate limiting (ADR-0009); a stricter limit on auth.
+    // App-level rate limiting (docs/security-privacy.md); a stricter limit on auth.
     ThrottlerModule.forRootAsync({
       inject: [ConfigService],
       useFactory: buildThrottlerOptions,

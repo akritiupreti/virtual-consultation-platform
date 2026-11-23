@@ -3,7 +3,7 @@ import { register as defaultRegister } from 'prom-client';
 import { MetricsService } from './metrics.service';
 
 /**
- * Prometheus scrape endpoint (ADR-0012). Unauthenticated by design — it exposes
+ * Prometheus scrape endpoint (docs/observability.md). Unauthenticated by design — it exposes
  * only aggregate counts, no PII or clinical content — and
  * is reachable on the local Compose network for a scraper. The content type is the
  * Prometheus text exposition format.

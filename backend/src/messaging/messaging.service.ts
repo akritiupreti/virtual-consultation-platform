@@ -46,7 +46,7 @@ export class MessagingService {
 
     // Push to the private consultation room. The room's members are exactly the
     // participants the matrix allows to read messages (admins can never join), so
-    // emitting the body here stays within the authorization boundary (ADR-0007).
+    // emitting the body here stays within the authorization boundary (ADR-0004).
     this.realtime.broadcastMessage({
       consultationId,
       message: {

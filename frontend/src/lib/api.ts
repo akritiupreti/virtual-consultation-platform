@@ -72,7 +72,7 @@ export interface PendingSignoff {
   draftedAt: string | null;
 }
 
-/** A case the calling doctor signed off — their own review history (ADR-0023). */
+/** A case the calling doctor signed off — their own review history (ADR-0009). */
 export interface SignedOff {
   id: string;
   priority: Priority;

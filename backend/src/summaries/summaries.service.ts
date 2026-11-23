@@ -61,7 +61,7 @@ export class SummariesService {
       consultationId,
     });
     // A reviewing doctor's open draft and the sign-off worklist reconcile live, so
-    // a revision is never signed off from a stale copy (ADR-0022).
+    // a revision is never signed off from a stale copy (ADR-0004).
     this.realtime.notifySummaryUpdated({
       consultationId,
       claimedBy: consultation.claimedBy,
@@ -137,7 +137,7 @@ export class SummariesService {
   async get(user: ActingUser, consultationId: string): Promise<SummaryView> {
     const consultation = await this.loadConsultationOr404(consultationId);
     // Load the summary before the authz check so the policy can grant the
-    // finalizing doctor continued read access via `finalizedBy` (ADR-0020). The
+    // finalizing doctor continued read access via `finalizedBy` (ADR-0009). The
     // role → state → ownership check still runs first, so a disallowed caller
     // gets 403 ahead of the not-found below, exactly as before.
     const summary = await this.prisma.summary.findUnique({ where: { consultationId } });

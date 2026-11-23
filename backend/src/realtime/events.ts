@@ -5,7 +5,7 @@ import { ConsultationState } from '@prisma/client';
  * single definition of channel names and payload shapes shared by the gateway and
  * the publisher service. Payloads deliberately carry no clinical content beyond
  * what the authorization matrix already permits the room's members to see
- * (ADR-0007, invariants 3 & 6): queue/position events are ids + states + counts;
+ * (ADR-0004, invariants 3 & 6): queue/position events are ids + states + counts;
  * message bodies travel only inside the private per-consultation room.
  */
 export const WS_EVENTS = {
@@ -26,7 +26,7 @@ export const WS_EVENTS = {
   MESSAGE_CREATED: 'message:created',
   /**
    * A consultation's summary changed (drafted, finalized) or
-   * a case entered the sign-off window (ADR-0022). Content-free: recipients — the
+   * a case entered the sign-off window (ADR-0004). Content-free: recipients — the
    * assigned clinician and every doctor — reconcile via REST.
    */
   SUMMARY_UPDATED: 'summary:updated',
@@ -41,8 +41,8 @@ export const consultationRoom = (id: string): string => `consultation:${id}`;
 /** Per-user personal room — carries a patient's own position/state updates. */
 export const userRoom = (userId: string): string => `user:${userId}`;
 /**
- * Doctors' sign-off room (ADR-0022). Every DOCTOR socket joins it on connect: any
- * doctor may sign off a case awaiting it (ADR-0018), so the worklist and an open
+ * Doctors' sign-off room (ADR-0004). Every DOCTOR socket joins it on connect: any
+ * doctor may sign off a case awaiting it (ADR-0009), so the worklist and an open
  * review must reconcile live for all of them. Carries content-free signals only.
  */
 export const SIGNOFF_ROOM = 'signoff';
@@ -73,7 +73,7 @@ export interface MessageCreatedPayload {
   message: { id: string; senderId: string; body: string; createdAt: string };
 }
 
-/** Why a summary signal fired (ADR-0022). No clinical content. */
+/** Why a summary signal fired (ADR-0004). No clinical content. */
 export type SummaryUpdateReason = 'drafted' | 'finalized' | 'ended';
 
 export interface SummaryUpdatedPayload {

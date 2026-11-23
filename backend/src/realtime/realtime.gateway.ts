@@ -31,7 +31,7 @@ interface JwtPayload {
 }
 
 /**
- * WebSocket gateway for the triage queue and consultation rooms (ADR-0004/0007).
+ * WebSocket gateway for the triage queue and consultation rooms (ADR-0004).
  *
  * Authorization holds over WebSockets exactly as it does over REST (invariants
  * 3 & 4): the JWT is verified on the handshake; subscribing to the queue is
@@ -114,8 +114,8 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection {
       // Every user joins their personal room for position/state updates.
       await client.join(userRoom(user.id));
       // Doctors also join the sign-off room: any doctor may sign off a case that
-      // is awaiting it (ADR-0018), so the worklist reconciles live for all of
-      // them (ADR-0022). Content-free signals only; role comes from the verified JWT.
+      // is awaiting it (ADR-0009), so the worklist reconciles live for all of
+      // them (ADR-0004). Content-free signals only; role comes from the verified JWT.
       if (user.role === Role.DOCTOR) {
         await client.join(SIGNOFF_ROOM);
       }

@@ -5,7 +5,7 @@ import { PrismaService } from '../../src/prisma/prisma.service';
 import { createTestApp, createUser, login, resetDb } from './helpers';
 
 /**
- * Doctor sign-off of a nurse-run case (ADR-0018). A nurse runs a consultation and
+ * Doctor sign-off of a nurse-run case (ADR-0009). A nurse runs a consultation and
  * drafts the summary; the case ends in ENDED with no doctor participant. A
  * different doctor must be able to discover it (pending-signoff worklist), read
  * the detail + draft (sign-off read window), and finalize it (ENDED → SUMMARIZED),
@@ -136,7 +136,7 @@ describe('doctor sign-off of a nurse-run case (e2e)', () => {
     });
 
     // The finalizing doctor keeps read access to the summary they signed, even now
-    // that the case is SUMMARIZED and they are not a participant (ADR-0020).
+    // that the case is SUMMARIZED and they are not a participant (ADR-0009).
     const afterSummary = await request(server)
       .get(`/consultations/${consultationId}/summary`)
       .set('Authorization', bearer(doctorToken))
@@ -147,7 +147,7 @@ describe('doctor sign-off of a nurse-run case (e2e)', () => {
 
     // The sign-off read window is scoped to ENDED: once the case is SUMMARIZED the
     // non-participant doctor can no longer read the consultation DETAIL (intake) —
-    // membership-scoping restored (ADR-0018). Only the signed summary (above) stays.
+    // membership-scoping restored (ADR-0009). Only the signed summary (above) stays.
     await request(server)
       .get(`/consultations/${consultationId}`)
       .set('Authorization', bearer(doctorToken))
@@ -167,7 +167,7 @@ describe('doctor sign-off of a nurse-run case (e2e)', () => {
       .expect(200);
     expect(pendingAfter.body).toHaveLength(0);
 
-    // ...and is kept on the doctor's own sign-off history (ADR-0023), minimal fields
+    // ...and is kept on the doctor's own sign-off history (ADR-0009), minimal fields
     // only; another doctor's history does not include it.
     const history = await request(server)
       .get('/consultations/signed-off')

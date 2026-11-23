@@ -7,7 +7,7 @@ import { ClaimTtlService } from '../../src/realtime/claim-ttl.service';
 import { createTestApp, createUser, resetDb } from './helpers';
 
 /**
- * CS-8 / FR-12 / SC-4 (ADR-0008): a claim that is never started within the start
+ * CS-8 / FR-12 / SC-4 (ADR-0007): a claim that is never started within the start
  * TTL is auto-requeued, `claimed_by` is cleared, and the requeue is audited. The
  * sweeper is driven directly (claim is back-dated past the TTL) so the assertion
  * is deterministic rather than waiting on wall-clock time.

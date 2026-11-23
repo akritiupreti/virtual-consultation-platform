@@ -9,7 +9,7 @@ import { createTestApp, createUser, login, resetDb } from './helpers';
  * - CS-16: a request is traceable end-to-end by correlation ID — echoed on the
  *   response header and stamped on the audit rows the request produced.
  * - CS-17: readiness reflects its real dependency (PostgreSQL gates it).
- * - Metrics endpoint exposes the request + domain series (ADR-0012).
+ * - Metrics endpoint exposes the request + domain series (docs/observability.md).
  */
 describe('Observability (e2e)', () => {
   let app: INestApplication;
@@ -99,7 +99,7 @@ describe('Observability (e2e)', () => {
     });
   });
 
-  describe('metrics endpoint (ADR-0012)', () => {
+  describe('metrics endpoint (docs/observability.md)', () => {
     it('exposes process and domain series in Prometheus format', async () => {
       const res = await request(server).get('/metrics').expect(200);
       expect(res.text).toContain('process_cpu_user_seconds_total');

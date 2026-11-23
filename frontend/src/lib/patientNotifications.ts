@@ -1,7 +1,7 @@
 /**
  * Maps a patient consultation's *state transition* to the message the patient
  * should be told about, and a hook that fires those messages as toasts when the
- * live-updated list changes (ADR-0019).
+ * live-updated list changes.
  *
  * Two deliberate rules keep this quiet and safe:
  *  - Only meaningful clinician-driven transitions notify (claim, start, end,
@@ -40,7 +40,7 @@ export function describeTransition(
     return null;
   }
   // A claimed case falling back to the queue is the claim-start TTL expiring
-  // (ADR-0008); say so, since the patient would otherwise see an unexplained
+  // (ADR-0007); say so, since the patient would otherwise see an unexplained
   // bounce back into the queue. A plain REQUESTED→QUEUED stays silent.
   if (prev === 'CLAIMED' && next === 'QUEUED') {
     return {

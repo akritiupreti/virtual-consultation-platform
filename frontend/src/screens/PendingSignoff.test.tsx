@@ -22,7 +22,7 @@ vi.mock('../lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../lib/api')>();
   return { ...actual, api: { ...actual.api, ...mock } };
 });
-// Capture the live signal handler (ADR-0022) so a test can play a server push.
+// Capture the live signal handler (ADR-0004) so a test can play a server push.
 const live = vi.hoisted(() => ({ summary: null as null | (() => void) }));
 vi.mock('../lib/realtime', () => ({
   useSummaryUpdates: (cb: () => void) => {
@@ -43,7 +43,7 @@ describe('PendingSignoff (doctor)', () => {
     mock.getSignedOff.mockReset().mockResolvedValue([]);
   });
 
-  it("keeps the doctor's completed sign-offs under Completed, linking to the summary (ADR-0023)", async () => {
+  it("keeps the doctor's completed sign-offs under Completed, linking to the summary (ADR-0009)", async () => {
     mock.getPendingSignoff.mockResolvedValue(fixtures.pendingSignoff);
     mock.getSignedOff.mockResolvedValue(signedOff);
     const { user, findAllByRole, getByRole, getAllByRole, getByText, queryByText } = render();

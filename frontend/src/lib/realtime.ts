@@ -98,7 +98,7 @@ export function usePatientUpdates(onChange: () => void): void {
 /**
  * A clinician's own assigned cases changed state (claimed, started, ended, cancelled
  * by the patient, re-queued, finalized). The server also sends `consultation:updated`
- * to the assigned clinician's personal room (ADR-0022), so "My consultations"
+ * to the assigned clinician's personal room (ADR-0004), so "My consultations"
  * reconciles without polling; `onChange` re-fetches the list.
  */
 export function useAssignedUpdates(onChange: () => void): void {
@@ -128,7 +128,7 @@ export interface SummaryUpdated {
 }
 
 /**
- * A summary changed or a case entered the sign-off window (ADR-0022). Delivered to
+ * A summary changed or a case entered the sign-off window (ADR-0004). Delivered to
  * every doctor (the sign-off room, joined on connect) and to the case's assigned
  * clinician. Content-free: `onUpdate` reconciles via REST.
  */

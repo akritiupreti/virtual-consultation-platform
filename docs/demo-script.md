@@ -88,19 +88,19 @@ sequenceDiagram
 4. **Nurse** — type the summary in **Clinical summary**. **Look for:** typing shows
    **Unsaved changes** and sends nothing; **Save draft** persists it ("Saved at …").
    Then **End consultation** — it asks for confirmation and saves an unsaved draft
-   first (ADR-0021). The nurse has no **Finalize** action. With the doctor's **Pending
+   first. The nurse has no **Finalize** action. With the doctor's **Pending
    sign-off** page open in the other window, **look for** the case appearing there
-   **without a refresh** (ADR-0018/0022).
+   **without a refresh** (ADR-0004, ADR-0009).
 5. **Doctor — review.** As `doctor@vcp.local`, open the case from **Pending
    sign-off**: the intake and the saved draft are shown read-only. In the nurse's
    window, edit the draft — nothing reaches the doctor until the nurse clicks **Save
    draft**, at which point the doctor's open copy updates live ("the drafter saved a
-   revision") (ADR-0021/0022).
+   revision") (ADR-0004).
 6. **Doctor — finalize.** **Finalize & sign off**, then confirm (→ Summarized). **Look
    for:** finalize is **doctor-only** and the summary becomes **immutable** — it can no
    longer be edited by anyone. The **finalizing doctor can still read** the summary they signed,
-   even on a nurse-run case (ADR-0020): on **Pending sign-off**, switch to
-   **Completed** — the case is kept there with a **View summary** link (ADR-0023).
+   even on a nurse-run case (ADR-0009): on **Pending sign-off**, switch to
+   **Completed** — the case is kept there with a **View summary** link (ADR-0009).
 7. **Patient** — **look for** a "summary is ready" toast; open **View summary** to read
    the finalized summary (and **Print** it).
 8. **Session expiry** — JWTs are short-lived (`JWT_EXPIRES_IN`, 15 min locally). When
@@ -153,7 +153,7 @@ The guarantee lives in the **database**, not the UI (ADR-0003, invariant 2).
 - **Deactivation** — on **Users**, search/filter accounts and **Deactivate** a
   clinician. **Look for:** a confirmation that explains the rule; try it on the nurse
   while their session from step 3 is still running — it is refused ("try again after
-  it ends"), and works once the session has ended (ADR-0010).
+  it ends"), and works once the session has ended (ADR-0008).
 - **Role/state gating** — try an action out of turn (e.g. a nurse finalizing, or acting
   on a case they don't own). **Look for:** a role violation is **403**, an action
   illegal from the current state is **409** — both from the single authorization matrix.

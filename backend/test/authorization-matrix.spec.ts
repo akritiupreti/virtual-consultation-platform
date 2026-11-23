@@ -131,7 +131,7 @@ describe('authorizeConsultationAction (role → state → ownership composition)
 });
 
 /**
- * Doctor sign-off read window (ADR-0018): FINALIZE_SUMMARY is doctor-only and not
+ * Doctor sign-off read window (ADR-0009): FINALIZE_SUMMARY is doctor-only and not
  * participant-scoped, so a doctor may also READ a case (detail + summary) while it
  * is awaiting sign-off (ENDED), even one a nurse ran and no doctor joined — but
  * nothing wider.
@@ -185,14 +185,14 @@ describe('doctor sign-off read window (PARTICIPANT_OR_SIGNOFF_DOCTOR)', () => {
 });
 
 /**
- * Finalizing doctor keeps read access to the summary they signed (ADR-0020).
+ * Finalizing doctor keeps read access to the summary they signed (ADR-0009).
  * The sign-off read window (above) is scoped to ENDED, so without this a doctor
  * who signs off a nurse-run case — a non-participant — would be locked out of the
  * record the instant they finalize it (ENDED → SUMMARIZED). The grant is keyed to
  * `finalizedBy`, so it is exactly the one signing doctor and nothing wider, and it
  * is carried only for VIEW_SUMMARY — the consultation detail stays membership-scoped.
  */
-describe('finalizing doctor summary read (ADR-0020)', () => {
+describe('finalizing doctor summary read (ADR-0009)', () => {
   const signingDoctor = { id: 'doc-2', role: Role.DOCTOR };
   const otherDoctor = { id: 'doc-3', role: Role.DOCTOR };
   const patient = { id: 'patient-1', role: Role.PATIENT };
@@ -218,7 +218,7 @@ describe('finalizing doctor summary read (ADR-0020)', () => {
 
   it('does not re-open the consultation detail — that stays membership-scoped', () => {
     // VIEW_CONSULTATION never carries `finalizedBy`, so the signing doctor remains
-    // locked out of the intake once the case leaves the sign-off window (ADR-0018).
+    // locked out of the intake once the case leaves the sign-off window (ADR-0009).
     const detailRef = {
       patientId: patient.id,
       claimedBy: 'nurse-1',

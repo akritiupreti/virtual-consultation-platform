@@ -88,7 +88,7 @@ The `AUDIT_LOG` table ([data-model.md](data-model.md)):
 
 Indexed on `consultation_id`, `actor_id`, `created_at` and
 `(event_type, created_at)` to back the filtered, newest-first query
-([ADR-0017](adr/0017-audit-log-indexing.md)). Writes are **append-only** and, for state changes, committed in the **same
+([performance.md](performance.md)). Writes are **append-only** and, for state changes, committed in the **same
 transaction** as the change they describe (so an audited action never diverges from
 what happened). The audit service accepts a transaction client for exactly this.
 

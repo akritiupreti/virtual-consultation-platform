@@ -1,7 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
 /**
- * Browser tier for the four critical screens (ADR-0015 / ADR-0016):
+ * Browser tier for the four critical screens (docs/testing-strategy.md):
  *   - a11y.spec.ts  — @axe-core/playwright WCAG 2.1 AA scan incl. real contrast
  *   - visual.spec.ts — pixel screenshots compared to committed baselines
  *

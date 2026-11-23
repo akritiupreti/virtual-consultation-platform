@@ -200,7 +200,7 @@ export class ConsultationsService {
     });
 
     // Live fan-out: clinicians refresh the queue, waiting patients get a fresh
-    // "N ahead" (this also warms the position cache read below).
+    // "N ahead".
     await this.realtime.notifyQueueChanged('enqueued', consultation.id);
 
     return {
@@ -613,7 +613,7 @@ export class ConsultationsService {
    * Serving-order index (0-based "N ahead") of every QUEUED case, read in one
    * ordered query (priority tier then FIFO) — the authoritative basis for a
    * patient's position without a per-row lookup. Used by the multi-row `getMine`;
-   * the single-row paths keep the cache-first `positionOf`.
+   * the single-row paths use the `positionOf` count.
    */
   private async queuePositions(): Promise<Map<string, number>> {
     const queued = await this.prisma.consultation.findMany({

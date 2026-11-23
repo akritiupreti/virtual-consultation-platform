@@ -19,7 +19,7 @@ flowchart TB
     P2["Phase 2 — MVP"] -->|"held: central SM + matrix<br/>absorbed every later action"| G2((✓))
     P3["Phase 3 — real-time"] -->|"corrected: 'reconcile from DB'<br/>made missed events harmless"| C3((±))
     P4["Phase 4 — security"] -->|"held: admin-cannot-read<br/>enforced + tested"| G4((✓))
-    P6["Phase 6 — quality"] -->|"corrected: coverage ≠ confidence<br/>→ merged gate (ADR-0014)"| C6((±))
+    P6["Phase 6 — quality"] -->|"corrected: coverage ≠ confidence<br/>→ merged gate"| C6((±))
     P6b["Phase 6 — a11y/visual"] -->|"corrected: contrast failed AA;<br/>snapshots flaked cross-OS"| C6b((±))
     P7["Phase 7 — performance"] -->|"corrected: the hotspot was the<br/>audit index, not the queue"| C7((±))
 
@@ -42,12 +42,12 @@ where the real engineering judgment shows.
   (DB-atomic claim, RBAC, real-time, readiness) can only be proven against a real
   Postgres, not mocks. Chasing a unit number would have meant mocking away the
   very things under test. This forced the coverage gate to be redefined as the
-  **merged union of unit + e2e** Istanbul coverage ([ADR-0014](adr/0014-coverage-gate-strategy.md)) —
+  **merged union of unit + e2e** Istanbul coverage ([testing-strategy.md](testing-strategy.md)) —
   a better model of confidence, but not the one assumed at the start.
 - **"Pixel snapshots are portable."** Visual-regression baselines generated on the
   development OS failed in CI because of font hinting and anti-aliasing differences.
   The fix was to **pin baseline generation and comparison to one Playwright Linux
-  container** ([ADR-0016](adr/0016-visual-regression.md)). Assumed portability cost a
+  container** ([testing-strategy.md](testing-strategy.md)). Assumed portability cost a
   rework of the whole visual suite's workflow.
 - **"The palette is obviously accessible."** The Phase 6 token-contrast test found
   **real WCAG AA violations** — the muted text, the `urgent` tier colour and the
@@ -66,11 +66,11 @@ where the real engineering judgment shows.
   every doctor_ for sign-off, the moment of saving became a clinical decision — a
   doctor must never sign a half-written sentence. Walking the nurse → doctor flow end
   to end in two browsers made this obvious; the answer was an explicit save with
-  safety nets ([ADR-0021](adr/0021-explicit-summary-save.md)).
+  safety nets.
 - **"The new workflow pieces are live like the rest."** The sign-off hand-off was the
   one flow still running on 20-second polling, because its audience ("any doctor") had
   no room. It took a `signoff` room and content-free signals
-  ([ADR-0022](adr/0022-live-summary-and-signoff-signals.md)) to make it as live as the
+  ([ADR-0004](adr/0004-realtime-websockets.md)) to make it as live as the
   queue — the gap was only visible when testing the roles side by side.
 
 ## Risks that actually materialised (vs. the Phase 0 register)
@@ -107,8 +107,9 @@ where the real engineering judgment shows.
   plausible-sounding changes (queue index direction, extra audit composites) because
   the query plans showed no gain and the write cost was real.
 - **Coverage is a floor, not the goal.** The critical scenarios (CS-1…CS-20) were the
-  real signal; the added tests closed genuine gaps (summary immutability, deactivation
-  guards, room targeting), not vanity lines.
+  real signal. Unit tests exist only where they isolate a rule the e2e suite cannot
+  (deactivation guard, claim and re-priority guards); everything else is proven once,
+  end-to-end, rather than re-asserted against mocks.
 - **A flexible audit `metadata` JSON bag aged well.** It let correlation IDs be added
   in Phase 5 with no migration — a small early decision that avoided later friction.
 

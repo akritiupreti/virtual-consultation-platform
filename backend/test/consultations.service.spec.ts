@@ -223,7 +223,7 @@ describe('ConsultationsService (unit)', () => {
     await expect(service.start(doctor, 'c-1')).rejects.toBeInstanceOf(IllegalTransitionException);
   });
 
-  it("lists only the calling doctor's own sign-offs, newest first (ADR-0023)", async () => {
+  it("lists only the calling doctor's own sign-offs, newest first (ADR-0009)", async () => {
     const { service, prisma } = build();
     prisma.consultation.findMany.mockResolvedValue([
       row({

@@ -19,7 +19,7 @@ function pathOnly(url?: string): string | undefined {
 }
 
 /**
- * Pino configuration for structured JSON logging (ADR-0011). The log record is
+ * Pino configuration for structured JSON logging (docs/observability.md). The log record is
  * strictly who/what/when: method, path (no query), status, correlation ID,
  * timing. It NEVER emits request/response bodies or headers — those can carry
  * `Authorization` tokens, cookies, or clinical content — so the Phase 4 privacy

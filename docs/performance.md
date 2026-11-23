@@ -7,7 +7,6 @@ the changes the query plans justified were made. This document is **diagram-firs
 the picture maps each hot read to the index that serves it; the evidence and the
 "considered and rejected" calls follow.
 
-Decisions: [ADR-0017 audit-log query indexing](adr/0017-audit-log-indexing.md).
 Related: [data model](data-model.md) · [architecture](architecture.md) ·
 [observability](observability.md) (the `vcp_queue_depth` / `vcp_active_consultations` metrics).
 
@@ -54,7 +53,7 @@ flowchart LR
 ```
 
 The two green indexes are the only schema change this phase
-([ADR-0017](adr/0017-audit-log-indexing.md)). Everything else was already served
+(§3.1–3.2). Everything else was already served
 by an existing index and was left alone.
 
 ---

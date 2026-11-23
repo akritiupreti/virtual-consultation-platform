@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 /**
- * Deterministic WCAG 2.1 contrast check on the design tokens (ADR-0015). jsdom
+ * Deterministic WCAG 2.1 contrast check on the design tokens (docs/testing-strategy.md). jsdom
  * cannot compute rendered contrast, and Lighthouse/axe-in-a-browser is the slow
  * path; the colours are fixed tokens, so we verify the ratios of the actual
  * foreground/background pairs used on the critical screens directly from
@@ -59,7 +59,7 @@ const BADGES = [
   { name: 'nurse/doctor', fg: '#2b7a3d', bg: '#e6f4ea' },
   { name: 'admin', fg: '#7a3db8', bg: '#f3e8fd' },
   { name: 'attention', fg: '#8a5000', bg: '#fff3e0' },
-  // Status / priority pills and banners (styles.css, ADR-0015).
+  // Status / priority pills and banners (styles.css, docs/testing-strategy.md).
   { name: 'pill neutral', fg: '#3d4a57', bg: '#eceff2' },
   { name: 'pill info', fg: '#0b57d0', bg: '#e3effd' },
   { name: 'pill success', fg: '#2b7a3d', bg: '#e6f4ea' },

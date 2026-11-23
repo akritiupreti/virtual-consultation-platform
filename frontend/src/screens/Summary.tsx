@@ -40,7 +40,7 @@ export default function SummaryScreen(): JSX.Element {
   }, [load]);
 
   // The room is open to its participants; a doctor who only signed the case off
-  // keeps access to this record (ADR-0020) but not to the room.
+  // keeps access to this record (ADR-0009) but not to the room.
   const canOpenRoom = user?.role === 'PATIENT' || (!!summary && summary.draftedBy === user?.id);
 
   return (

@@ -12,8 +12,9 @@ content). Authorization must be centralized and testable.
 
 ## Decision
 
-- **Authentication:** token-based sessions using **JWT access tokens** (short
-  lived) plus refresh tokens; passwords stored with a strong hash (e.g. argon2/bcrypt).
+- **Authentication:** **short-lived JWT access tokens** (15 minutes); passwords
+  stored as **bcrypt** hashes. Every request re-checks that the account is still
+  active, so a deactivated user's token stops working at once.
 - **Authorization:** a single **authorization matrix** keyed by
   _action × role × state × ownership_ ([authorization-matrix.md](../authorization-matrix.md)),
   enforced server-side via guards that share the transition registry
@@ -31,5 +32,8 @@ content). Authorization must be centralized and testable.
 ## Consequences
 
 - One place defines who-can-do-what; negative tests can assert every denied cell.
-- Must handle token expiry/refresh and authenticate WebSocket connections.
+- WebSocket connections are authenticated with the same token
+  ([ADR-0004](0004-realtime-websockets.md)).
+- When the token expires the user signs in again. Refresh-token rotation is the
+  production follow-up, noted in [security-privacy.md](../security-privacy.md).
 - The separation-of-duties rule is an explicit, tested invariant.

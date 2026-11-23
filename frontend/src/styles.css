@@ -1269,7 +1269,7 @@ pre {
   border: 0;
 }
 
-/* ── Toast notifications (ADR-0019) ───────────────────────────────────────── */
+/* ── Toast notifications ───────────────────────────────────────── */
 .toast-region {
   position: fixed;
   bottom: 20px;

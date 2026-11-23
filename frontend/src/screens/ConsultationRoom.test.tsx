@@ -22,7 +22,7 @@ vi.mock('../lib/api', async (importOriginal) => {
   return { ...actual, api: { ...actual.api, ...mock } };
 });
 
-// Capture the live summary handler so a test can play a server signal (ADR-0022).
+// Capture the live summary handler so a test can play a server signal (ADR-0004).
 const live = vi.hoisted(() => ({ summary: null as null | ((p: SummaryUpdated) => void) }));
 vi.mock('../lib/realtime', () => ({
   useConsultationRoom: () => undefined,
@@ -79,7 +79,7 @@ describe('ConsultationRoom screen', () => {
     expect(mock.start).toHaveBeenCalledWith('c-1');
   });
 
-  it('saves the summary draft only when the clinician clicks Save (ADR-0021)', async () => {
+  it('saves the summary draft only when the clinician clicks Save', async () => {
     const { user, findByLabelText, getByRole, findByText } = render(fixtures.users.doctor);
     const draft = await findByLabelText(/summary draft/i);
     await waitFor(() => expect(draft).toHaveValue('Synthetic summary content for testing only.'));
@@ -175,7 +175,7 @@ describe('ConsultationRoom screen', () => {
     expect(mock.finalizeSummary).toHaveBeenCalledWith('c-1');
   });
 
-  it('shows the reviewing doctor a revision the drafter saves, live (ADR-0022)', async () => {
+  it('shows the reviewing doctor a revision the drafter saves, live (ADR-0004)', async () => {
     mock.getConsultation.mockResolvedValue(nurseRunEnded());
     mock.getSummary.mockResolvedValue(
       fixtures.summary({ finalized: false, content: 'First draft' }),

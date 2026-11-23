@@ -46,8 +46,8 @@ export class UsersService {
    *
    * A user who is in an active session (IN_SESSION, as the patient or the
    * assigned clinician) cannot be deactivated — the admin retries once the session
-   * ends (FR-24, ADR-0010). A clinician who has only claimed a case can be: the
-   * claim-start TTL returns that case to the queue (ADR-0008).
+   * ends (FR-24, ADR-0008). A clinician who has only claimed a case can be: the
+   * claim-start TTL returns that case to the queue (ADR-0007).
    */
   async deactivate(actor: ActingUser, targetId: string): Promise<UserView> {
     if (actor.id === targetId) {

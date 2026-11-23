@@ -1,12 +1,12 @@
 /**
- * Lightweight in-app notification layer (ADR-0019). A single `aria-live` region
+ * Lightweight in-app notification layer. A single `aria-live` region
  * at the app root surfaces transient "toast" messages; adding a message both
  * shows it visually and has it announced by assistive technology. This is the
  * delivery mechanism only — it carries whatever text the caller passes and holds
  * no clinical content itself (invariant 6; callers phrase state-only messages).
  *
  * Intentionally dependency-free and in-app only: no browser/OS push, no service
- * worker (deferred — see ADR-0019).
+ * worker (out of scope for the in-app demo).
  */
 import {
   createContext,

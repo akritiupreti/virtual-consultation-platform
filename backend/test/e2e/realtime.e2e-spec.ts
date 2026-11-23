@@ -17,7 +17,7 @@ import {
 } from './helpers';
 
 /**
- * CS-7 (live updates) and CS-9 (WS auth/authz boundaries), ADR-0004/0007.
+ * CS-7 (live updates) and CS-9 (WS auth/authz boundaries), ADR-0004.
  *
  * Proves two things over real socket.io connections to a listening app:
  *  1. Two subscribers see live queue/room updates (the Phase 3 exit criterion).
@@ -205,7 +205,7 @@ describe('real-time gateway (e2e)', () => {
     expect(event.message.body).toBe('How are you feeling now?');
   });
 
-  // ── Live sign-off / summary signals (ADR-0022) ───────────────────────────────
+  // ── Live sign-off / summary signals (ADR-0004) ───────────────────────────────
 
   it('signals summary changes to every doctor and the drafter — never the patient', async () => {
     const consultationId = await seedQueuedRequest('patient@test.local');

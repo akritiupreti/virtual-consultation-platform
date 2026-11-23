@@ -26,7 +26,7 @@ Authorization for every endpoint _and every WebSocket room_ derives from the sin
 | `404 Not Found`         | Consultation/summary/user does not exist (or hidden from a non-participant)                                         |
 | `409 Conflict`          | Illegal state transition, lost claim race, active-consultation cap, or deactivating a user who is in a live session |
 | `413 Payload Too Large` | Request body exceeds the configured size cap                                                                        |
-| `429 Too Many Requests` | Rate limit exceeded (the auth endpoints are limited; [ADR-0009](adr/0009-rate-limiting.md))                         |
+| `429 Too Many Requests` | Rate limit exceeded (the auth endpoints are limited; see [security-privacy.md](security-privacy.md))                |
 
 Error bodies follow Nest's shape: `{ "statusCode", "message", "error" }` where
 `message` may be a string or an array of validation messages.
@@ -51,7 +51,7 @@ ownership condition checked after the role gate.
 | `GET /consultations/mine`            | P     | owner                                                    | —              | `200` own consultations + "N ahead"          |
 | `GET /consultations/assigned`        | N,D   | own claims (`claimedBy` = caller)                        | —              | `200` minimal list of the caller's cases     |
 | `GET /consultations/pending-signoff` | D     | `state=ENDED` + drafted-unfinalized summary              | —              | `200` minimal sign-off worklist              |
-| `GET /consultations/signed-off`      | D     | own sign-offs (`summary.finalizedBy` = caller)           | —              | `200` minimal sign-off history (ADR-0023)    |
+| `GET /consultations/signed-off`      | D     | own sign-offs (`summary.finalizedBy` = caller)           | —              | `200` minimal sign-off history (ADR-0009)    |
 | `GET /consultations/:id`             | P,N,D | participant · _or_ doctor while `state=ENDED` (sign-off) | —              | `200` full detail + intake                   |
 | `POST /consultations/:id/claim`      | N,D   | `state=QUEUED` (DB-atomic)                               | —              | `200` CLAIMED · `409` if already claimed     |
 | `POST /consultations/:id/start`      | N,D   | assigned · `state=CLAIMED` · under cap                   | —              | `200` IN_SESSION · `409` cap/again           |
@@ -75,11 +75,11 @@ never the full narrative or summary text:
 | `mine` (patient)           | `id`, `state`, `priority`, `createdAt`, `complaintSummary` (their own, ≤100 chars), `position` (QUEUED only), `summaryAvailable`                                                          |
 | `assigned` (clinician)     | `id`, `state`, `priority`, `symptomCategory`, `complaintSummary`, `claimedAt`/`startedAt`/`endedAt`, `summaryDrafted`, `summaryFinalized`                                                 |
 | `pending-signoff` (doctor) | `id`, `priority`, `symptomCategory`, `complaintSummary`, `endedAt`, `draftedBy`, `draftedAt`                                                                                              |
-| `signed-off` (doctor)      | `id`, `priority`, `symptomCategory`, `complaintSummary`, `endedAt`, `finalizedAt`, `draftedBy` — never the summary text; open the summary via `GET /consultations/:id/summary` (ADR-0020) |
+| `signed-off` (doctor)      | `id`, `priority`, `symptomCategory`, `complaintSummary`, `endedAt`, `finalizedAt`, `draftedBy` — never the summary text; open the summary via `GET /consultations/:id/summary` (ADR-0009) |
 
 `summaryDrafted: false` on an `ENDED` case is what the clinician UI flags as "Write
 the summary": without a saved draft the case cannot reach the sign-off worklist
-([ADR-0021](adr/0021-explicit-summary-save.md)).
+(saving is an explicit action in the UI, so a reviewer never sees half-written text).
 
 ## Messaging (clinical content — admin denied)
 
@@ -115,7 +115,7 @@ Admin-only (matrix `MANAGE_USERS`); nothing here exposes clinical content.
   from the DB), and their live sockets are dropped.
 - A user who is the patient or the assigned clinician of an `IN_SESSION`
   consultation cannot be deactivated: the request is `409` until the session ends
-  ([ADR-0010](adr/0010-deactivation-during-session.md)). A clinician who has only
+  ([ADR-0008](adr/0008-deactivation-during-session.md)). A clinician who has only
   claimed a case can be deactivated; the claim-start TTL returns that case to the
   queue.
 - An admin cannot deactivate **their own** account (`400`); deactivating an already-
@@ -155,7 +155,7 @@ log schema are in [audit-logging.md](audit-logging.md).
 
 Live triage-queue and consultation-room updates over **socket.io** at the same
 origin as the REST API (`VITE_API_URL`)
-([ADR-0004](adr/0004-realtime-websockets.md)/[0007](adr/0007-realtime-implementation.md)).
+([ADR-0004](adr/0004-realtime-websockets.md)).
 Events are **signals**: the server stays authoritative and clients reconcile real
 state via the REST endpoints above.
 
@@ -173,12 +173,12 @@ Room membership is granted only after the same authorization check as REST
 (role → state → ownership). No payload carries clinical content beyond what the
 room's members are already permitted to read (data minimization, invariants 3 & 6).
 
-| Room                | Who may join                                                    | Authorized by                                                                                |
-| ------------------- | --------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| `queue`             | Nurse / Doctor                                                  | matrix `VIEW_QUEUE`                                                                          |
-| `consultation:<id>` | That consultation's participants (and a doctor during sign-off) | matrix `VIEW_CONSULTATION`                                                                   |
-| `user:<id>`         | That user only (auto-joined)                                    | the authenticated identity                                                                   |
-| `signoff`           | Every doctor (auto-joined on connect)                           | the verified JWT role is `DOCTOR` ([ADR-0022](adr/0022-live-summary-and-signoff-signals.md)) |
+| Room                | Who may join                                                    | Authorized by                                                                   |
+| ------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `queue`             | Nurse / Doctor                                                  | matrix `VIEW_QUEUE`                                                             |
+| `consultation:<id>` | That consultation's participants (and a doctor during sign-off) | matrix `VIEW_CONSULTATION`                                                      |
+| `user:<id>`         | That user only (auto-joined)                                    | the authenticated identity                                                      |
+| `signoff`           | Every doctor (auto-joined on connect)                           | the verified JWT role is `DOCTOR` ([ADR-0004](adr/0004-realtime-websockets.md)) |
 
 Admins can connect (to use REST admin features) but are **refused** every clinical
 room — separation of duties holds over WebSockets.
@@ -200,7 +200,7 @@ Each returns an ack `{ ok: boolean, error?: 'unauthorized'|'forbidden'|'not_foun
 | `queue:updated`        | `{ reason, consultationId? }`                                    | enqueue · priority change · claim · requeue · complete · cancel (FR-18/C18)             |
 | `consultation:updated` | `{ consultationId, state }`                                      | any state change; to the room and the patient's and assigned clinician's personal rooms |
 | `message:created`      | `{ consultationId, message: { id, senderId, body, createdAt } }` | a new message (private room only; body is allowed here)                                 |
-| `summary:updated`      | `{ consultationId, reason }`                                     | draft saved · finalized · case ended; to `signoff` + the assignee (ADR-0022)            |
+| `summary:updated`      | `{ consultationId, reason }`                                     | draft saved · finalized · case ended; to `signoff` + the assignee (ADR-0004)            |
 | `position:updated`     | `{ consultationId, state, position }`                            | a patient's live "N ahead" changed (C2/FR-4)                                            |
 
 `queue:updated` `reason` ∈ `enqueued | priority_changed | claimed | requeued | completed | cancelled | state_changed`.

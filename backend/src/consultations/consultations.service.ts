@@ -65,7 +65,7 @@ export interface AssignedConsultationView {
   claimedAt: Date | null;
   startedAt: Date | null;
   endedAt: Date | null;
-  /** A summary draft exists — without one an ENDED case cannot reach sign-off (ADR-0018). */
+  /** A summary draft exists — without one an ENDED case cannot reach sign-off (ADR-0009). */
   summaryDrafted: boolean;
   summaryFinalized: boolean;
 }
@@ -87,9 +87,9 @@ export interface PendingSignoffView {
 }
 
 /**
- * A doctor's own sign-off history row (ADR-0023): a case whose summary this doctor
+ * A doctor's own sign-off history row (ADR-0009): a case whose summary this doctor
  * finalized. Minimal, like the worklist — never the summary text. The doctor reads
- * the signed summary itself through VIEW_SUMMARY's finalizing-doctor grant (ADR-0020).
+ * the signed summary itself through VIEW_SUMMARY's finalizing-doctor grant (ADR-0009).
  */
 export interface SignedOffView {
   id: string;
@@ -200,7 +200,7 @@ export class ConsultationsService {
     });
 
     // Live fan-out: clinicians refresh the queue, waiting patients get a fresh
-    // "N ahead" (this also warms the position cache read below).
+    // "N ahead".
     await this.realtime.notifyQueueChanged('enqueued', consultation.id);
 
     return {
@@ -275,7 +275,7 @@ export class ConsultationsService {
    * A clinician's own assigned cases (claimedBy = self), newest claim first, so
    * they can return to a consultation — or its finalised summary — without the
    * URL. Only cases still assigned to them appear; a requeued case (claimedBy
-   * cleared by the claim-start TTL, ADR-0008) drops off the list.
+   * cleared by the claim-start TTL, ADR-0007) drops off the list.
    */
   async getAssigned(user: ActingUser): Promise<AssignedConsultationView[]> {
     const rows = await this.prisma.consultation.findMany({
@@ -340,9 +340,9 @@ export class ConsultationsService {
   }
 
   /**
-   * The calling doctor's completed sign-offs, newest first (ADR-0023): every case
+   * The calling doctor's completed sign-offs, newest first (ADR-0009): every case
    * whose summary they finalized, whether a nurse or they ran it. Scoped strictly to
-   * `finalizedBy = caller` — exactly the summaries ADR-0020 already lets them read —
+   * `finalizedBy = caller` — exactly the summaries ADR-0009 already lets them read —
    * so it widens nothing; it only makes their own final reviews findable again.
    */
   async getSignedOff(user: ActingUser): Promise<SignedOffView[]> {
@@ -505,7 +505,7 @@ export class ConsultationsService {
       claimedBy: existing.claimedBy,
     });
     // A case ending with a draft already written enters the doctors' sign-off
-    // worklist now, so tell them (ADR-0022).
+    // worklist now, so tell them (ADR-0004).
     this.realtime.notifySummaryUpdated({
       consultationId: id,
       claimedBy: existing.claimedBy,
@@ -613,7 +613,7 @@ export class ConsultationsService {
    * Serving-order index (0-based "N ahead") of every QUEUED case, read in one
    * ordered query (priority tier then FIFO) — the authoritative basis for a
    * patient's position without a per-row lookup. Used by the multi-row `getMine`;
-   * the single-row paths keep the cache-first `positionOf`.
+   * the single-row paths use the `positionOf` count.
    */
   private async queuePositions(): Promise<Map<string, number>> {
     const queued = await this.prisma.consultation.findMany({

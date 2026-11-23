@@ -26,7 +26,7 @@ export interface ConsultationRef {
   /**
    * The doctor who finalized the summary, if any. Populated only for summary
    * reads (`VIEW_SUMMARY`) so the finalizing doctor keeps read access to the
-   * record they signed once the case leaves the sign-off window (ADR-0020).
+   * record they signed once the case leaves the sign-off window (ADR-0009).
    * Absent for every other action, where it has no effect.
    */
   finalizedBy?: string | null;
@@ -92,7 +92,7 @@ function assertOwnership(
       // The doctor who finalised a summary keeps read access to that record once
       // the case leaves the sign-off window (ENDED → SUMMARIZED). Without this the
       // signing doctor on a nurse-run case — who is not a participant — would be
-      // locked out of the very summary they just signed (ADR-0020). Strictly the
+      // locked out of the very summary they just signed (ADR-0009). Strictly the
       // one finalising doctor, never "any doctor", so exposure stays minimal
       // (invariant 6); `finalizedBy` is set only for VIEW_SUMMARY.
       const isFinalizingDoctor =

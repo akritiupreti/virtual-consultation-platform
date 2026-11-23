@@ -138,7 +138,7 @@ who-may-do-what-when (invariants 1 & 4).
 | `common/state-machine` | Transition registry (the central bank of transitions)                                                   | 2 ✅                  |
 | `RealtimeModule`       | WebSocket gateway (JWT handshake, room authz), live fan-out to rooms, claim-TTL sweeper                 | 3 ✅                  |
 | `UsersModule`          | Admin user management, deactivation/reactivation (refused while the user is in an active session)       | 4 ✅                  |
-| `ThrottlerGuard`       | Global rate limiting with a stricter auth limit (ADR-0009)                                              | 4 ✅                  |
+| `ThrottlerGuard`       | Global rate limiting with a stricter auth limit                                                         | 4 ✅                  |
 | `CommonModule`         | Correlation-ID store (ALS) + middleware, structured-logging config, Prometheus metrics                  | 5 ✅                  |
 | `HealthModule`         | `GET /ready` readiness probe gated on PostgreSQL; liveness stays on `GET /health`                       | 5 ✅                  |
 
@@ -258,7 +258,7 @@ sequenceDiagram
     C->>API: POST :id/complete → ENDED
     C->>API: POST :id/summary (draft)
     D->>API: POST :id/summary/finalize → SUMMARIZED (immutable)
-    D->>API: GET :id/summary (finalizing doctor retains read · ADR-0020)
+    D->>API: GET :id/summary (finalizing doctor retains read · ADR-0009)
     P->>API: GET :id/summary (finalized only)
 ```
 
@@ -312,9 +312,9 @@ both images containerise (built, not pushed — local Compose target, ADR-0006).
 **Phase 6** coverage is **gate-enforced**, not observe-only: the frontend Vitest gate
 (≥80%) runs in `verify`, and the **merged** backend unit + e2e coverage gate (≥90%
 statements/lines/functions) runs in `integration` via `nyc`
-([ADR-0014](adr/0014-coverage-gate-strategy.md)). A fourth job,
+([testing-strategy.md](testing-strategy.md#coverage-ci-enforced)). A fourth job,
 **accessibility-visual**, runs axe WCAG 2.1 AA and visual-regression on the four
-critical screens inside the pinned Playwright container (ADR-0015/0016). Full
+critical screens inside the pinned Playwright container ([testing-strategy.md](testing-strategy.md)). Full
 pipeline detail is in [testing-strategy.md](testing-strategy.md) and
 [deployment.md](deployment.md). The repo is an **npm workspaces monorepo**
 (`backend`, `frontend`) sharing one TypeScript base config, ESLint (flat) and
@@ -326,9 +326,9 @@ Prettier, with Conventional-Commit enforcement via husky + commitlint.
 
 The triage queue and the consultation room go **live** over WebSockets
 ([ADR-0004](adr/0004-realtime-websockets.md)). The transport is socket.io, with
-rooms as the authorization unit ([ADR-0007](adr/0007-realtime-implementation.md));
+rooms as the authorization unit ([ADR-0004](adr/0004-realtime-websockets.md));
 the claim-start TTL is a
-DB-authoritative sweeper ([ADR-0008](adr/0008-claim-start-ttl.md)). Two rules keep
+DB-authoritative sweeper ([ADR-0007](adr/0007-claim-start-ttl.md)). Two rules keep
 the real-time layer honest:
 
 - **PostgreSQL stays authoritative.** Every event is emitted _after_ the DB change
@@ -427,11 +427,11 @@ exception). On reconnect the client re-authenticates, the gateway re-authorizes
 every room join, and the UI pulls the authoritative state over REST — missed
 events don't matter because the client re-reads the source of truth.
 
-### 7.4 Live summary hand-off — nurse drafts, any doctor signs (ADR-0021/0022)
+### 7.4 Live summary hand-off — nurse drafts, any doctor signs (ADR-0004, ADR-0009)
 
-A nurse-run case is signed off by **any** doctor (ADR-0018), so summary changes are
+A nurse-run case is signed off by **any** doctor (ADR-0009), so summary changes are
 signalled to the `signoff` room (every doctor) and to the drafter's personal room —
-never to the patient. Saving is explicit (ADR-0021): nothing reaches a reviewer while
+never to the patient. Saving is explicit: nothing reaches a reviewer while
 the drafter is still typing.
 
 ```mermaid
@@ -467,7 +467,7 @@ authoritative, and admins still cannot read clinical content. The full threat mo
 is in [security-privacy.md](security-privacy.md) and the audit catalogue in
 [audit-logging.md](audit-logging.md).
 
-### 8.1 Deactivation during an active session (ADR-0010)
+### 8.1 Deactivation during an active session (ADR-0008)
 
 ```mermaid
 sequenceDiagram

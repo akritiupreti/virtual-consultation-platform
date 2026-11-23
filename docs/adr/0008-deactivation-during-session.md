@@ -1,4 +1,4 @@
-# ADR-0010: No deactivation during an active session
+# ADR-0008: No deactivation during an active session
 
 - **Status:** Accepted
 - **Date:** 2026-10-15
@@ -6,7 +6,7 @@
 
 ## Context
 
-Deactivation is a soft state change ([C12](../amrit-feedback-responses.md), FR-23):
+Deactivation is a soft state change (FR-23):
 a deactivated user cannot log in, and any token they already hold stops working.
 The hard edge case is **deactivating someone in the middle of a consultation**
 (FR-24). If the clinician — or the patient — disappears mid-session, the other
@@ -29,7 +29,7 @@ status='ACTIVE' AND no IN_SESSION consultation exists for them`. If a session
   row or it does not. Zero rows ⇒ **`409 Conflict`** ("try again after the session
   ends"); nothing changes and nothing is audited.
 - A clinician who has only **claimed** a case (not started it) _can_ be
-  deactivated. The existing claim-start TTL sweeper ([ADR-0008](0008-claim-start-ttl.md))
+  deactivated. The existing claim-start TTL sweeper ([ADR-0007](0007-claim-start-ttl.md))
   returns that case to the queue within minutes, and the patient keeps their
   original place in line.
 - On success: the status change is audited **`USER_DEACTIVATED`** (who/what/when

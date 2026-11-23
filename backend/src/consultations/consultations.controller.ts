@@ -74,7 +74,7 @@ export class ConsultationsController {
     return this.consultations.getPendingSignoff();
   }
 
-  // The calling doctor's own completed sign-offs (ADR-0023). Before `:id` as above.
+  // The calling doctor's own completed sign-offs (ADR-0009). Before `:id` as above.
   @Get('signed-off')
   @Roles(Role.DOCTOR)
   signedOff(@CurrentUser() user: AuthenticatedUser): Promise<SignedOffView[]> {

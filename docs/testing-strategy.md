@@ -29,23 +29,22 @@ flowchart TB
     end
     subgraph unit [Backend unit · pure, no I/O]
         direction LR
-        tr[transition registry] --- mx[authorization matrix + policy] --- au[auth service]
-        svc[service guards: summaries · consultations · users · realtime]
+        tr[transition registry] --- mx[authorization matrix + policy] --- lg[log redaction]
+        svc[service guards: consultations · users]
     end
     unit --> e2e --> fe --> browser
 ```
 
 - **Backend unit tests** (fast, no database) cover the pure decision logic — the
-  transition registry, the authorization matrix/policy, the auth service — plus the
-  service-level guard branches (summary immutability, claim and re-priority guards,
-  the deactivation rule, real-time room targeting) with Prisma mocked. They run on
-  every PR.
+  transition registry, the authorization matrix/policy and the log-redaction policy —
+  plus the service-level guard branches (claim and re-priority guards, sign-off
+  history scoping, the deactivation rule) with Prisma mocked. They run on every PR.
 - **Integration / e2e tests** boot the real NestJS app against a **real PostgreSQL**,
   because the guarantees that matter (DB-atomic claim, cross-role access, real-time
   fan-out, readiness) cannot be proven with mocks. They run in a dedicated CI job with
   a `postgres` service container.
 - **Frontend component tests** (Vitest + React Testing Library + jsdom,
-  [ADR-0013](adr/0013-frontend-test-runner.md)) render each critical screen with the
+  chosen because it reuses the app's Vite build) render each critical screen with the
   API/realtime layers mocked, asserting behaviour, `jest-axe` AA structure and
   keyboard interaction; lib tests cover the api/auth/realtime clients; a
   token-contrast test pins WCAG ratios.
@@ -67,19 +66,19 @@ covered regardless of the coverage percentage.
 | CS-5  | No privilege escalation (role/ownership)                              | `authorization-matrix.spec.ts` + rbac e2e                | SC-7 / NFR-1             |
 | CS-6  | Doctor-only finalize; nurse denied                                    | lifecycle + rbac e2e                                     | FR-13                    |
 | CS-7  | Two subscribers see live queue/room updates                           | `test/e2e/realtime.e2e-spec.ts`                          | FR-18 / C18 / ADR-0004   |
-| CS-8  | Claimed-but-not-started auto-requeues + audited                       | `test/e2e/claim-ttl-requeue.e2e-spec.ts`                 | FR-12 / SC-4 / ADR-0008  |
+| CS-8  | Claimed-but-not-started auto-requeues + audited                       | `test/e2e/claim-ttl-requeue.e2e-spec.ts`                 | FR-12 / SC-4 / ADR-0007  |
 | CS-9  | WS connections authenticated; admin/non-participant refused rooms     | `test/e2e/realtime.e2e-spec.ts`                          | NFR-1 / invariants 3 & 4 |
 | CS-10 | Messages reach only the two participants (REST + private WS room)     | `test/e2e/rbac.e2e-spec.ts` + realtime e2e               | SC-6 / SC-8 / FR-16      |
-| CS-11 | No deactivation while the user is in an active session (409)          | `test/e2e/deactivation.e2e-spec.ts` + users unit spec    | FR-24 / ADR-0010         |
-| CS-12 | A different doctor finds, reviews and signs off a nurse-run case      | `test/e2e/signoff.e2e-spec.ts`                           | FR-13 / ADR-0018         |
+| CS-11 | No deactivation while the user is in an active session (409)          | `test/e2e/deactivation.e2e-spec.ts` + users unit spec    | FR-24 / ADR-0008         |
+| CS-12 | A different doctor finds, reviews and signs off a nurse-run case      | `test/e2e/signoff.e2e-spec.ts`                           | FR-13 / ADR-0009         |
 | CS-13 | Full privilege-escalation matrix (role × state × ownership)           | `authorization-matrix.spec.ts` + `rbac.e2e-spec.ts`      | SC-7 / NFR-1             |
 | CS-14 | Deactivation: no login, token rejected, audited, reactivation works   | `test/e2e/deactivation.e2e-spec.ts`                      | FR-23/25                 |
 | CS-15 | Admin audit query filters + paginates + excludes clinical content     | `test/e2e/audit-query.e2e-spec.ts`                       | FR-15 / SC-6             |
-| CS-16 | A request is traceable end-to-end by correlation ID                   | `test/e2e/observability.e2e-spec.ts`                     | SC-15 / ADR-0011         |
+| CS-16 | A request is traceable end-to-end by correlation ID                   | `test/e2e/observability.e2e-spec.ts`                     | SC-15                    |
 | CS-17 | Readiness reflects its dependency (gated on Postgres)                 | `test/e2e/observability.e2e-spec.ts`                     | SC-15                    |
 | CS-18 | No PII/clinical data (nor headers/query) ever reaches the logs        | `logging-redaction.spec.ts` + audit no-content (CS-15)   | SC-9 / NFR-2             |
-| CS-19 | Summary hand-off is live, content-free, and never reaches the patient | `test/e2e/realtime.e2e-spec.ts` + room/worklist specs    | FR-13 / ADR-0021/0022    |
-| CS-20 | A doctor's sign-off history lists only their own sign-offs            | `test/e2e/signoff.e2e-spec.ts` + consultations unit spec | ADR-0023                 |
+| CS-19 | Summary hand-off is live, content-free, and never reaches the patient | `test/e2e/realtime.e2e-spec.ts` + room/worklist specs    | FR-13 / ADR-0004         |
+| CS-20 | A doctor's sign-off history lists only their own sign-offs            | `test/e2e/signoff.e2e-spec.ts` + consultations unit spec | ADR-0009                 |
 
 ### How the concurrency test proves correctness (CS-2)
 
@@ -158,7 +157,7 @@ the browser uses.
   audit no-clinical-content scan (CS-15). A deterministic unit assertion is used
   rather than scraping a live log stream, which would be brittle.
 
-> **Rate limiting (ADR-0009)** is enforced in dev/prod but its limits are scaled far
+> **Rate limiting** is enforced in dev/prod but its limits are scaled far
 > up in the test environment so the concurrency/e2e suites (many requests from one
 > IP) are never throttled; the guard still runs. A deterministic 429 test is omitted
 > deliberately — it would be timing-dependent — and the limiter is a manual/config
@@ -225,7 +224,7 @@ The key Phase 6 change is the two **GATE** steps (green): frontend Vitest covera
 the build on a regression, where Phase 5 only uploaded a report. The
 `accessibility-visual` job is new.
 
-## Coverage (CI-enforced — [ADR-0014](adr/0014-coverage-gate-strategy.md))
+## Coverage (CI-enforced)
 
 Targets: **backend ≥ 90%**, **frontend ≥ 80%** (NFR-7 / SC-10 / SC-11). As of Phase 6
 these are **gates, not observations** — a drop below threshold fails CI.
@@ -239,17 +238,18 @@ these are **gates, not observations** — a drop below threshold fails CI.
   (the remaining uncovered branches are socket-gateway, health-probe and config/degrade
   paths the integration suite exercises in aggregate — forcing them one-by-one is the
   number-chasing C23 warns against). Run locally with `npm run coverage:combined
---workspace backend` (needs the test DB up). Current: ~94% stmts / ~73%
+--workspace backend` (needs the test DB up). Current: ~93% stmts / ~69%
   branch.
 - **Frontend — Vitest v8.** `npm run test:cov --workspace frontend` gates statements /
-  lines / functions / branches at **≥ 80%**. Current: ~95% stmts.
+  lines / functions / branches at **≥ 80%**. Current: ~93% stmts.
 - **Exclusions** (excluded, not fake-tested): DI modules, DTO shells, `main.ts`, the
   Prisma seed, and the main-only socket.io CORS adapter.
 - **Critical scenarios stay the priority (SC-12):** CS-1 … CS-20 are covered
-  regardless of the percentage; the added tests closed real gaps (e.g. summary
-  immutability, deactivation guards, room targeting), not vanity lines.
+  regardless of the percentage; unit tests exist only where they prove a rule the
+  e2e suite does not isolate (e.g. the deactivation guard, claim and re-priority
+  guards), not to lift the number.
 
-## Accessibility (CI-enforced — [ADR-0015](adr/0015-accessibility-tooling.md))
+## Accessibility (CI-enforced)
 
 **WCAG 2.1 AA** on the four critical screens (login, triage queue, consultation room,
 summary), verified with **axe** in two tiers plus explicit keyboard and contrast checks
@@ -266,7 +266,7 @@ summary), verified with **axe** in two tiers plus explicit keyboard and contrast
   — `--muted`, the `--urgent` tier colour and the patient badge were below AA and were
   darkened.
 
-## Visual regression (CI-enforced — [ADR-0016](adr/0016-visual-regression.md))
+## Visual regression (CI-enforced)
 
 Pixel baselines on the **four critical screens only** (C25), via Playwright
 `toHaveScreenshot`. The screens render from a static build with the backend stubbed

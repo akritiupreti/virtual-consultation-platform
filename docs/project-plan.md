@@ -172,57 +172,45 @@ clean and green.
 
 ## Documentation plan — every document to be produced
 
-| #   | Document                                                     | Phase      |
-| --- | ------------------------------------------------------------ | ---------- |
-| 1   | `README.md` (root)                                           | 0 ✅       |
-| 2   | `CONTRIBUTING.md`                                            | 0 ✅       |
-| 3   | `docs/README.md` (index)                                     | 0 ✅       |
-| 4   | `docs/project-plan.md`                                       | 0 ✅       |
-| 5   | `docs/requirements.md`                                       | 0 ✅       |
-| 6   | `docs/state-machine.md`                                      | 0 ✅       |
-| 7   | `docs/authorization-matrix.md`                               | 0 ✅       |
-| 8   | `docs/data-model.md` (ER)                                    | 0 ✅       |
-| 9   | `docs/success-criteria.md`                                   | 0 ✅       |
-| 10  | `docs/architecture.md`                                       | 1 ✅       |
-| 11  | `docs/api-spec.md`                                           | 1/2        |
-| 12  | `docs/security-privacy.md` (threat model)                    | 1/4        |
-| 13  | `docs/audit-logging.md`                                      | 4          |
-| 14  | `docs/observability.md`                                      | 5          |
-| 15  | `docs/deployment.md`                                         | 5          |
-| 16  | `docs/testing-strategy.md`                                   | 2/6        |
-| 17  | `docs/adr/` — template + 0001–0023 (more as decisions arise) | 🟡 ongoing |
-| 18  | `docs/retrospective.md`                                      | 7 ✅       |
-| 19  | `docs/performance.md`                                        | 7 ✅       |
-| 20  | `docs/demo-script.md`                                        | 7 ✅       |
+| #   | Document                                  | Phase |
+| --- | ----------------------------------------- | ----- |
+| 1   | `README.md` (root)                        | 0 ✅  |
+| 2   | `CONTRIBUTING.md`                         | 0 ✅  |
+| 3   | `docs/README.md` (index)                  | 0 ✅  |
+| 4   | `docs/project-plan.md`                    | 0 ✅  |
+| 5   | `docs/requirements.md`                    | 0 ✅  |
+| 6   | `docs/state-machine.md`                   | 0 ✅  |
+| 7   | `docs/authorization-matrix.md`            | 0 ✅  |
+| 8   | `docs/data-model.md` (ER)                 | 0 ✅  |
+| 9   | `docs/success-criteria.md`                | 0 ✅  |
+| 10  | `docs/architecture.md`                    | 1 ✅  |
+| 11  | `docs/api-spec.md`                        | 1/2   |
+| 12  | `docs/security-privacy.md` (threat model) | 1/4   |
+| 13  | `docs/audit-logging.md`                   | 4     |
+| 14  | `docs/observability.md`                   | 5     |
+| 15  | `docs/deployment.md`                      | 5     |
+| 16  | `docs/testing-strategy.md`                | 2/6   |
+| 17  | `docs/adr/` — template + 0001–0009        | 7 ✅  |
+| 18  | `docs/retrospective.md`                   | 7 ✅  |
+| 19  | `docs/performance.md`                     | 7 ✅  |
+| 20  | `docs/demo-script.md`                     | 7 ✅  |
 
-### Planned ADRs (initial set)
+### ADRs
 
-- ADR-0001 — Backend framework choice (NestJS vs Express/Fastify)
-- ADR-0002 — PostgreSQL as system of record
-- ADR-0003 — Claim concurrency strategy (DB-atomic conditional update)
-- ADR-0004 — Real-time transport (WebSockets)
-- ADR-0005 — AuthN/AuthZ approach (sessions/JWT + role+state matrix)
+- ADR-0001 — Backend framework choice (NestJS vs Express/Fastify) ✅
+- ADR-0002 — PostgreSQL as system of record ✅
+- ADR-0003 — Claim concurrency strategy (DB-atomic conditional update) ✅
+- ADR-0004 — Real-time over WebSockets (socket.io rooms as the permission boundary) ✅
+- ADR-0005 — AuthN/AuthZ approach (JWT + role+state matrix) ✅
 - ADR-0006 — Deployment target (local Docker Compose) ✅
-- ADR-0007 — Real-time implementation (socket.io) ✅
-- ADR-0008 — Claim-start TTL via a DB-authoritative sweeper ✅
-- ADR-0009 — Application-level rate limiting ✅
-- ADR-0010 — No deactivation during an active session ✅
-- ADR-0011 — Structured logging & correlation IDs ✅
-- ADR-0012 — Metrics (Prometheus) ✅
-- ADR-0013 — Frontend test runner (Vitest) ✅
-- ADR-0014 — Coverage-gate strategy (merged unit + e2e) ✅
-- ADR-0015 — Accessibility tooling (two-tier axe) ✅
-- ADR-0016 — Visual-regression tooling & baseline strategy ✅
-- ADR-0017 — Audit-log query indexing (Phase 7 performance) ✅
+- ADR-0007 — Claim-start TTL via a DB-authoritative sweeper ✅
+- ADR-0008 — No deactivation during an active session ✅
+- ADR-0009 — Doctor sign-off of nurse-run consultations ✅
 
-### ADRs added after Phase 7 (workflow refinements)
-
-- ADR-0018 — Doctor sign-off of nurse-run consultations ✅
-- ADR-0019 — Patient in-app notifications for state changes ✅
-- ADR-0020 — Finalizing doctor keeps read access to the signed summary ✅
-- ADR-0021 — Explicit save for the summary draft ✅
-- ADR-0022 — Live summary and sign-off signals (doctors' sign-off room) ✅
-- ADR-0023 — A doctor's own sign-off history on the sign-off screen ✅
+Smaller implementation choices (logging and metrics libraries, test tooling, the
+audit-log indexes) are explained in the doc that covers each area —
+[observability.md](observability.md), [testing-strategy.md](testing-strategy.md),
+[performance.md](performance.md) — rather than in separate ADRs.
 
 ---
 
@@ -283,7 +271,7 @@ capabilities_, each with evidence.
 | Security & privacy      | Separation of duties, min. views  | `security-privacy.md` threat model + privacy tests |
 | Observability           | Structured logs + correlation IDs | `observability.md` + a traced-request example      |
 | Testing discipline      | Test pyramid + gates              | `testing-strategy.md` + CI coverage report         |
-| Performance engineering | Measured indexing + N+1 fix       | `performance.md` (EXPLAIN before/after) + ADR-0017 |
+| Performance engineering | Measured indexing + N+1 fix       | `performance.md` (EXPLAIN before/after)            |
 | Delivery / DevOps       | Docker Compose + GitHub Actions   | `deployment.md` + green pipeline                   |
 | Engineering judgment    | ADRs + retrospective              | `docs/adr/` + `retrospective.md`                   |
 

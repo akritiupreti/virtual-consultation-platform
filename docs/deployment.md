@@ -169,11 +169,11 @@ Four jobs run on every PR and on `main` (`.github/workflows/ci.yml`):
   coverage**, then **merges** them and runs `nyc check-coverage` — the backend coverage
   **GATE ≥90%** (statements/lines/functions). The merged total is the honest number
   because the DB-atomic and cross-role guarantees are proven against the real DB, not
-  mocks ([ADR-0014](adr/0014-coverage-gate-strategy.md)).
+  mocks ([testing-strategy.md](testing-strategy.md)).
 - **accessibility-visual** — runs inside the pinned Playwright container (so fonts and
   anti-aliasing match the committed snapshots), serving a static build with the backend
   stubbed, then runs **axe WCAG 2.1 AA** (incl. contrast) and **visual-regression** on
-  the four critical screens (ADR-0015/0016).
+  the four critical screens ([testing-strategy.md](testing-strategy.md)).
 - **docker image build** — builds the backend and frontend images with Buildx to
   prove the stack containerises (SC-14). Images are **built but not pushed**: the
   target is local Compose (ADR-0006), so there is **no registry, no deploy stage,

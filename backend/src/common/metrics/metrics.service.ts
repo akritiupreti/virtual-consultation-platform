@@ -4,7 +4,7 @@ import { collectDefaultMetrics, Gauge, Registry } from 'prom-client';
 import { PrismaService } from '../../prisma/prisma.service';
 
 /**
- * Owns the Prometheus registry and the platform's metrics (ADR-0012):
+ * Owns the Prometheus registry and the platform's metrics (docs/observability.md):
  *
  * - **Default process metrics** — memory, CPU, event-loop lag (prom-client).
  * - **Domain metrics** — `vcp_queue_depth` (QUEUED consultations) and

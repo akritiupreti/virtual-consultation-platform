@@ -3,7 +3,7 @@ import { Throttle } from '@nestjs/throttler';
 import { ThrottlerModuleOptions } from '@nestjs/throttler';
 
 /**
- * Rate-limit configuration (ADR-0009). App-level throttling protects the auth
+ * Rate-limit configuration (docs/security-privacy.md). App-level throttling protects the auth
  * surface from brute-force and abuse. A single global throttler sets a generous
  * default; a stricter per-route limit is applied via the decorator below, which
  * overrides the default throttler for that handler. Counters live in the

@@ -66,7 +66,7 @@ stateDiagram-v2
 - **Claim timeout:** a `CLAIMED` case not started within the start TTL is
   auto-requeued (`CLAIMED → QUEUED`), `claimed_by` cleared, event audited, queue
   subscribers notified. Implemented in Phase 3 by a DB-authoritative sweeper
-  ([ADR-0008](adr/0008-claim-start-ttl.md)) and audited as `CONSULTATION_REQUEUED`.
+  ([ADR-0007](adr/0007-claim-start-ttl.md)) and audited as `CONSULTATION_REQUEUED`.
 - **Session cap, not a claim cap:** `MAX_ACTIVE_CONSULTATIONS_PER_CLINICIAN` (default
   1, FR-10) limits `IN_SESSION` cases and is checked at `start`. There is no separate
   limit on how many cases one clinician can hold in `CLAIMED`; the start TTL returns
@@ -74,7 +74,7 @@ stateDiagram-v2
 - **Deactivation during a session:** an admin cannot deactivate the patient or the
   clinician of an `IN_SESSION` consultation — the request is refused with `409`
   until the session ends, so no new transition is needed (FR-24;
-  [ADR-0010](adr/0010-deactivation-during-session.md)). A clinician who has only
+  [ADR-0008](adr/0008-deactivation-during-session.md)). A clinician who has only
   claimed a case can be deactivated; the claim-timeout rule above returns that
   case to the queue.
 - **Connection loss in session:** the state is unchanged server-side; clients

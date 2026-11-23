@@ -20,7 +20,7 @@ import {
  * The real-time publisher. Domain services (consultations, messaging, summaries)
  * and the claim-TTL sweeper call these methods after they have committed a change
  * to PostgreSQL — the DB is authoritative; this layer only fans the news out
- * (ADR-0004/0007). When no socket server is attached (e.g. a REST-only test)
+ * (ADR-0004). When no socket server is attached (e.g. a REST-only test)
  * every emit is a safe no-op.
  */
 @Injectable()
@@ -53,7 +53,7 @@ export class RealtimeService {
 
   /**
    * A consultation's summary changed, or a case entered the sign-off window
-   * (ADR-0022). Sent to the assigned clinician's personal room (their "My
+   * (ADR-0004). Sent to the assigned clinician's personal room (their "My
    * consultations" list and open editor) and to the doctors' sign-off room (the
    * worklist and any open review), never to the patient — a draft is not theirs to
    * see. The payload is an id + reason only; recipients reconcile via REST.
@@ -76,7 +76,7 @@ export class RealtimeService {
    * A consultation's state changed. Emitted to the consultation room (both
    * participants), to the patient's personal room so their status view reconciles
    * even when they are not inside the room, and to the assigned clinician's
-   * personal room so their "My consultations" list does too (ADR-0022). The
+   * personal room so their "My consultations" list does too (ADR-0004). The
    * payload is an id + state, which every recipient may already see.
    */
   broadcastConsultationUpdated(consultation: {

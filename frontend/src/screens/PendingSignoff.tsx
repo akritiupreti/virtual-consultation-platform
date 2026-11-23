@@ -22,13 +22,13 @@ interface Row {
 }
 
 /**
- * A doctor's sign-off worklist (ADR-0018) and their own sign-off history
- * (ADR-0023). **Active** is every ended case with a saved, unfinalized draft —
+ * A doctor's sign-off worklist (ADR-0009) and their own sign-off history
+ * (ADR-0009). **Active** is every ended case with a saved, unfinalized draft —
  * typically nurse-run, so it appears in neither the triage queue nor "My
  * consultations"; each opens the room to review and finalize or return it.
  * **Completed** is the cases this doctor signed off, kept so a final review never
- * disappears once it is done; each opens the signed summary (ADR-0020). Both
- * lists update live for every doctor (ADR-0022).
+ * disappears once it is done; each opens the signed summary (ADR-0009). Both
+ * lists update live for every doctor (ADR-0004).
  */
 export default function PendingSignoff(): JSX.Element {
   const { user } = useAuth();

@@ -42,7 +42,7 @@ jobs:
         run: npm run typecheck
 
       # Backend unit tests for fast signal (the gated coverage number is the
-      # merged unit + e2e total, enforced in the `integration` job — ADR-0014).
+      # merged unit + e2e total, enforced in the `integration` job — docs/testing-strategy.md).
       - name: Test backend (unit)
         run: npm run test --workspace backend
 
@@ -110,7 +110,7 @@ jobs:
       # Runs the unit + e2e suites with coverage, merges them, and ENFORCES the
       # gate: statements/lines/functions ≥90% (NFR-7 / SC-10), branches ≥65%.
       # The merged total is the honest coverage number because the core
-      # guarantees are proven against a real Postgres, not mocks (ADR-0014).
+      # guarantees are proven against a real Postgres, not mocks (docs/testing-strategy.md).
       - name: Test (unit + e2e) — merged coverage GATE ≥90%
         run: npm run coverage:combined --workspace backend
 
@@ -157,7 +157,7 @@ jobs:
           cache-to: type=gha,mode=max
 
   # Accessibility (WCAG 2.1 AA) + visual regression on the four critical screens
-  # (C24 / C25 / SC-13 / ADR-0015 / ADR-0016). Runs INSIDE the pinned Playwright
+  # (C24 / C25 / SC-13 / docs/testing-strategy.md). Runs INSIDE the pinned Playwright
   # container so the browser, fonts and anti-aliasing match the committed
   # snapshot baselines exactly — the cross-platform snapshot footgun. The app is
   # served as a static build with the backend stubbed, so no Postgres.
